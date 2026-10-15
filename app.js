@@ -1898,6 +1898,7 @@ $("#authSwitch").addEventListener("click", () => authView(authMode === "login" ?
 $("#authForgot").addEventListener("click", () => authView("forgot", "Digite seu e-mail. Vamos enviar um link para você criar uma senha nova."));
 $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.getAttribute("aria-pressed") !== "true"; b.setAttribute("aria-pressed", on); b.setAttribute("aria-label", on ? "Esconder senha" : "Mostrar senha"); $("#aPass").type = on ? "text" : "password"; $("#aPass2").type = on ? "text" : "password"; });
 (async function boot() {
+  if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register("sw.js").catch(() => {});
   await authInit();
   $("#whoTop").textContent = user.name || user.email;
   let saved = await dbGet("kv", "state:" + user.uid);
@@ -1915,7 +1916,6 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
   if (shared) { go("add"); setMode("paste"); $("#pasteBox").value = shared; showImport(extractAddresses(shared), "compartilhado"); history.replaceState(null, "", location.pathname); }
   if (qs.has("compartilhado")) { history.replaceState(null, "", location.pathname); receiveShared(); }
   if (qs.has("acao")) { const a = qs.get("acao"); if (a === "bipar") { go("add"); setMode("scan"); } if (a === "adicionar") go("add"); if (a === "voz") setTimeout(listen, 400); }
-  if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register("sw.js").catch(() => {});
 })();
 
 // para testes automáticos

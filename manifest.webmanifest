@@ -95,5 +95,36 @@
         }
       ]
     }
-  }
+  },
+  "screenshots": [
+    {
+      "src": "screenshots/1-rota.png",
+      "sizes": "1082x2402",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Próxima entrega com navegação"
+    },
+    {
+      "src": "screenshots/2-adicionar.png",
+      "sizes": "1082x2402",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Endereço por QR code, foto, planilha, voz"
+    },
+    {
+      "src": "screenshots/3-painel.png",
+      "sizes": "1082x2402",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Painel de ganhos e lucro real"
+    },
+    {
+      "src": "screenshots/4-assistente.png",
+      "sizes": "1082x2402",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Assistente de dúvidas"
+    }
+  ],
+  "prefer_related_applications": false
 }
