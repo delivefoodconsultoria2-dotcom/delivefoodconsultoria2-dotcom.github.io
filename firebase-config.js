@@ -10,7 +10,17 @@ window.DELIVEROTA_FIREBASE = {
   appId: "1:123:web:abc"
 };
 */
-window.DELIVEROTA_FIREBASE = null;
+window.DELIVEROTA_FIREBASE = {
+  apiKey: "AIzaSyCUPf_rMnBhtdWdUPJ7BQEhsXsggQqkj0k",
+  authDomain: "deliverota.firebaseapp.com",
+  projectId: "deliverota",
+  storageBucket: "deliverota.firebasestorage.app",
+  messagingSenderId: "198822343603",
+  appId: "1:198822343603:web:fa88e189e33bb41b0a91c6"
+};
+
+/* Contas master (podem cadastrar entregadores) */
+window.DELIVEROTA_ADMINS = ["delivefoodconsultoria@gmail.com", "delivefoodconsultoria2@gmail.com"];
 
 /* Link da videoaula (YouTube, Google Drive, etc.). Cole o link entre as aspas.
    Exemplo: window.DELIVEROTA_VIDEO_URL = "https://youtu.be/xxxxxxxx"; */
