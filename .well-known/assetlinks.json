@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.delivefood.deliverota",
+        "sha256_cert_fingerprints": ["87:9B:95:17:2A:CF:B4:6F:3B:2C:00:5B:18:9E:6F:1C:A9:FF:58:A0:B9:9F:BC:85:F4:0D:A0:A1:10:40:34:82"]
+      }
+    }]
