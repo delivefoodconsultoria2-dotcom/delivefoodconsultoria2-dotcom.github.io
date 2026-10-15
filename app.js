@@ -197,12 +197,12 @@ const CEP_RE = /\b(\d{5})-?(\d{3})\b/;
 const PHONE_RE = /(\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4})/;
 const COMP_RE = /\b(apto?\.?|apartamento|ap\b|bloco|bl\.?|casa|cs\.?|fundos|frente|sala|sl\.?|loja|lj\.?|andar|conj\.?|cj\b|torre|lote|lt\.?|quadra|qd\.?|kit|box)\b/i;
 function parseAddressLine(raw) {
-  let line = raw.replace(/\s+/g, " ").replace(/^(endere[cç]o|end\.?|destino|entrega)\s*[:\-]\s*/i, "").trim();
+  let line = raw.replace(/\s+/g, " ").trim().replace(/^(\d{1,3}\s*[.)\-–º°]|[-•*–>]|parada\s*\d+\s*[:\-]?)\s+/i, "").replace(/^(endere[cç]o|end\.?|destino|entrega)\s*[:\-]\s*/i, "").trim();
   const out = { raw: raw.trim(), street: "", num: "", comp: "", bairro: "", city: "", cep: "", phone: "" };
   const cm = line.match(CEP_RE); if (cm) { out.cep = cm[1] + "-" + cm[2]; line = line.replace(cm[0], " ").replace(/\bcep\s*[:.]?\s*/i, " "); }
   const pm = line.match(PHONE_RE); if (pm && digits(pm[1]).length >= 10) { out.phone = pm[1]; line = line.replace(pm[1], " "); }
   line = line.replace(/\s+/g, " ").replace(/[\s,\-–]+$/, "").trim();
-  const m = line.match(/^(.*?[A-Za-zÀ-ú.]\s*)[,\s]+(?:n[º°o]?\.?\s*|n[uú]mero\s*)?(\d{1,6}[A-Za-z]?|s\/?n[º°]?)(?=$|[\s,\-–/])[\s,\-–/]*(.*)$/i);
+  const m = line.match(/^([^,]*[A-Za-zÀ-ú.][^,]*),\s*(?:n[º°o]?\.?\s*|n[uú]mero\s*)?(\d{1,6}[A-Za-z]?|s\/?n[º°]?)(?=$|[\s,\-–/])[\s,\-–/]*(.*)$/i) || line.match(/^(.*?[A-Za-zÀ-ú.]\s*)[,\s]+(?:n[º°o]?\.?\s*|n[uú]mero\s*)?(\d{1,6}[A-Za-z]?|s\/?n[º°]?)(?=$|[\s,\-–/])[\s,\-–/]*(.*)$/i);
   let rest = "";
   if (m) { out.street = m[1].replace(/[,\-–\s]+$/, "").trim(); out.num = /s\/?n/i.test(m[2]) ? "s/n" : m[2]; rest = m[3]; }
   else { const parts = line.split(/\s*[,\-–]\s*/); out.street = parts.shift() || ""; rest = parts.join(", "); }
