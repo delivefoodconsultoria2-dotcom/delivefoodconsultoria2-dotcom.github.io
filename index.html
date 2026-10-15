@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DeliveRota</title>
+<meta name="description" content="Roteirizador de entregas para entregadores: monte a rota por QR code, foto, planilha, PDF, voz ou texto.">
+<meta name="theme-color" content="#18A957">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-tab="rota">
+<div class="app">
+  <header class="top">
+    <img class="logo" src="icons/icon-192.png" alt="">
+    <div class="brand">DeliveRota<small id="today">Rota de hoje</small></div>
+    <span class="who" id="whoTop"></span>
+    <span class="chip" id="netChip"><i></i><span>Online</span></span>
+    <button class="sosbtn" data-act="sos" aria-label="Emergência">SOS</button>
+    <button class="iconbtn" id="setBtn" aria-label="Configurações">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </header>
+
+  <div class="body">
+    <!-- MAPA (sempre visível no computador; na aba Rota no celular) -->
+    <div class="mapcol">
+      <div id="map" class="map"><div class="map-off" id="mapOff" hidden>O mapa precisa de internet para carregar. A rota e as entregas continuam funcionando.</div></div>
+      <div class="map-actions">
+        <button class="mbtn" id="locBtn" title="Usar minha localização como partida"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8"/></svg></button>
+        <button class="mbtn" id="pinBtn" title="Tocar no mapa para adicionar parada"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><path d="M12 7v6M9 10h6"/></svg></button>
+        <button class="optbtn" id="optBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>Otimizar rota</button>
+      </div>
+    </div>
+
+    <main class="panel">
+      <!-- ROTA -->
+      <section class="screen" id="s-rota">
+        <div class="daycard">
+          <div class="ring" aria-hidden="true">
+            <svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" class="ring-bg"/><circle cx="32" cy="32" r="27" class="ring-fg" id="ringFg" pathLength="100" stroke-dasharray="0 100"/></svg>
+            <div class="ring-t"><b id="stDone">0</b><span>de <i id="stTotal">0</i></span></div>
+          </div>
+          <div class="day-info">
+            <span class="eyebrow">Ganho de hoje</span>
+            <b class="day-earn">R$ <span id="stEarn">0</span></b>
+            <div class="mini"><span><b id="stLeft">0</b> faltam</span><span><b id="stKm">0</b> km</span><span>fim <b id="stEnd">--</b></span></div>
+          </div>
+        </div>
+        <div class="dayx"><div id="goalBox"></div><select id="platSel" aria-label="Plataforma de hoje"></select></div>
+        <div id="maintBanner"></div>
+        <div id="meiBanner"></div>
+        <div id="nextBox"></div>
+      </section>
+
+      <!-- PARADAS -->
+      <section class="screen" id="s-paradas" hidden>
+        <div class="sec-h"><h2 class="sec">Paradas</h2><button class="btn ghost sm" id="scanFindBtn">Bipar pacote</button></div>
+        <div class="field"><input id="search" placeholder="Buscar por rua, cliente ou código" aria-label="Buscar parada"></div>
+        <div class="seg" id="filters">
+          <button aria-pressed="true" data-f="all">Todas</button>
+          <button aria-pressed="false" data-f="pending">Pendentes</button>
+          <button aria-pressed="false" data-f="delivered">Entregues</button>
+          <button aria-pressed="false" data-f="failed">Com problema</button>
+        </div>
+        <div id="list"></div>
+      </section>
+
+      <!-- ADICIONAR -->
+      <section class="screen" id="s-add" hidden>
+        <h2 class="sec">Adicionar endereços</h2>
+        <p class="hint">Escolha como o endereço chega até você. Tudo vira parada na rota.</p>
+        <div class="modes" id="modes">
+          <button class="mode" data-m="type" aria-pressed="true"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/></svg><b>Digitar / CEP</b></button>
+          <button class="mode" data-m="scan" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8h3v3H8zM13 13h3v3h-3zM13 8h3M8 13v3"/></svg><b>QR / código</b></button>
+          <button class="mode" data-m="photo" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><b>Foto / print</b></button>
+          <button class="mode" data-m="file" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M8 13h8M8 17h5"/></svg><b>Planilha / PDF</b></button>
+          <button class="mode" data-m="paste" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6"/></svg><b>Colar texto</b></button>
+          <button class="mode" data-m="voice" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><b>Ditar</b></button>
+          <button class="mode" data-m="audio" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M3 10v4M7 7v10M11 4v16M15 8v8M19 11v2"/></svg><b>Áudio do WhatsApp</b></button>
+          <button class="mode" data-m="map" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg><b>Tocar no mapa</b></button>
+        </div>
+
+        <!-- digitar -->
+        <form id="f-type" class="pane" autocomplete="off">
+          <div class="grid2">
+            <div class="field"><label for="cep">CEP</label><input id="cep" inputmode="numeric" placeholder="00000-000" maxlength="9"></div>
+            <div class="field"><label for="num">Número</label><input id="num" placeholder="123 ou s/n"></div>
+          </div>
+          <div class="field"><label for="street">Rua / Avenida</label><input id="street" placeholder="Rua, avenida, travessa..."></div>
+          <div class="grid2">
+            <div class="field"><label for="bairro">Bairro</label><input id="bairro"></div>
+            <div class="field"><label for="city">Cidade</label><input id="city"></div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label for="comp">Complemento</label><input id="comp" placeholder="Bloco, apto, casa"></div>
+            <div class="field"><label for="win">Horário</label><select id="win"><option value="">Qualquer hora</option><option>Até 12:00</option><option>12:00–15:00</option><option>Depois das 15:00</option></select></div>
+          </div>
+          <div class="field"><label for="ref">Referência</label><input id="ref" placeholder="Portão verde, ao lado da padaria"></div>
+          <div class="grid2">
+            <div class="field"><label for="client">Cliente</label><input id="client"></div>
+            <div class="field"><label for="phone">Telefone</label><input id="phone" inputmode="tel" placeholder="(31) 90000-0000"></div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label for="code">Código do pacote</label><input id="code" placeholder="Opcional"></div>
+            <div class="field"><label for="pkgs">Pacotes</label><input id="pkgs" type="number" min="1" value="1"></div>
+          </div>
+          <label class="check"><input type="checkbox" id="prio"> Prioridade (entregar primeiro)</label>
+          <button class="btn primary big" type="submit">Adicionar parada</button>
+        </form>
+
+        <!-- scanner -->
+        <div id="f-scan" class="pane" hidden>
+          <p class="hint">Aponte para o QR code ou código de barras da etiqueta. Se o código tiver endereço, a parada é criada. Se for só o código do pacote, você liga ele a uma parada.</p>
+          <button class="btn primary big" id="openScan">Abrir câmera</button>
+          <label class="check"><input type="checkbox" id="scanCont" checked> Modo contínuo (bipar vários pacotes seguidos)</label>
+          <div id="scanLog"></div>
+        </div>
+
+        <!-- foto -->
+        <div id="f-photo" class="pane" hidden>
+          <label class="drop" for="ocrFile">Fotografar etiqueta ou escolher print<small>Funciona com etiqueta de pacote, print do app da plataforma, foto de lista escrita à mão legível</small></label>
+          <input id="ocrFile" type="file" accept="image/*" multiple hidden>
+          <div id="ocrStatus" class="status" hidden></div>
+        </div>
+
+        <!-- arquivo -->
+        <div id="f-file" class="pane" hidden>
+          <label class="drop" for="docFile">Escolher planilha ou PDF<small>Excel (.xlsx, .xls), CSV, PDF ou TXT. O app encontra a coluna de endereço sozinho.</small></label>
+          <input id="docFile" type="file" accept=".xlsx,.xls,.csv,.ods,.pdf,.txt,application/pdf,text/csv,text/plain" hidden>
+          <div id="docStatus" class="status" hidden></div>
+        </div>
+
+        <!-- colar -->
+        <form id="f-paste" class="pane" hidden>
+          <div class="field"><label for="pasteBox">Um endereço por linha</label>
+            <textarea id="pasteBox" placeholder="Rua da Bahia, 1500 - apto 32 - Lourdes&#10;Av. Afonso Pena, 900 - Centro&#10;Rua Pernambuco, 456, sala 2"></textarea></div>
+          <p class="hint">Cole a lista do WhatsApp, e-mail ou planilha. Linhas repetidas são ignoradas. Dica: no celular, use "Compartilhar → DeliveRota" direto do WhatsApp.</p>
+          <button class="btn primary big" type="submit">Importar endereços</button>
+        </form>
+
+        <!-- voz -->
+        <div id="f-voice" class="pane center" hidden>
+          <button class="mic" id="micBtn" type="button" aria-label="Falar endereço"><svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+          <p id="voiceText" class="strong">Toque e diga, por exemplo: "Rua Harmonia, 456, casa 2"</p>
+        </div>
+
+        <!-- áudio -->
+        <div id="f-audio" class="pane" hidden>
+          <label class="drop" for="audioFile">Escolher áudio<small>Áudio do WhatsApp (.opus, .ogg), .m4a, .mp3 ou .wav. O app transcreve e acha os endereços. No celular, também dá para usar Compartilhar → DeliveRota direto no WhatsApp.</small></label>
+          <input id="audioFile" type="file" accept="audio/*,.opus,.ogg,.oga,.m4a,.mp3,.wav,.aac,.webm" multiple hidden>
+          <div id="audioStatus" class="status" hidden></div>
+          <form id="audioForm" hidden>
+            <div class="field" style="margin-top:10px"><label for="audioText">O que foi dito (corrija se precisar)</label><textarea id="audioText"></textarea></div>
+            <button class="btn primary" type="submit" style="width:100%">Buscar endereços neste texto</button>
+          </form>
+        </div>
+
+        <!-- mapa -->
+        <div id="f-map" class="pane" hidden>
+          <p class="hint">Toque no mapa no ponto da entrega. O app descobre a rua e o número mais próximos.</p>
+          <button class="btn primary big" type="button" id="goPin">Escolher no mapa</button>
+        </div>
+
+        <div id="importBox"></div>
+      </section>
+
+      <!-- PAINEL -->
+      <section class="screen" id="s-resumo" hidden>
+        <h2 class="sec">Painel</h2>
+        <div id="dueBox"></div>
+        <div class="dash">
+          <div class="seg" id="perSeg">
+            <button data-per="today" aria-pressed="false">Hoje</button>
+            <button data-per="week" aria-pressed="true">Semana</button>
+            <button data-per="month" aria-pressed="false">Mês</button>
+            <button data-per="year" aria-pressed="false">Ano</button>
+            <button data-per="custom" aria-pressed="false">Escolher datas</button>
+          </div>
+          <div class="grid2" id="perCustom" hidden>
+            <div class="field"><label for="perFrom">De</label><input id="perFrom" type="date"></div>
+            <div class="field"><label for="perTo">Até</label><input id="perTo" type="date"></div>
+          </div>
+          <div id="perSum"></div>
+          <div class="chart-h"><h3 class="sub-h">Lucro real</h3>
+            <div class="seg mini-seg" id="grpSeg"><button data-grp="day" aria-pressed="true">Diário</button><button data-grp="week" aria-pressed="false">Semanal</button><button data-grp="month" aria-pressed="false">Mensal</button></div></div>
+          <div class="chart" id="chProfit"></div>
+          <h3 class="sub-h">Entregas</h3>
+          <div class="chart" id="chDone"></div>
+          <div id="platBox"></div>
+          <div class="row wrap" style="margin-top:12px">
+            <button class="btn primary" id="perWa">Enviar no WhatsApp</button>
+            <button class="btn ghost" id="perMail">Enviar por e-mail</button>
+            <button class="btn ghost" id="perXls">Baixar planilha</button>
+          </div>
+        </div>
+
+        <h2 class="sec" style="margin-top:22px">Hoje</h2>
+        <div class="kpis">
+          <div class="kpi hero"><span>Ganho estimado</span><b id="kEarn">R$ 0,00</b><span id="kEarnSub"></span></div>
+          <div class="kpi"><span>Entregues</span><b id="kDone">0</b></div>
+          <div class="kpi"><span>Com problema</span><b id="kFail">0</b></div>
+          <div class="kpi"><span>Km da rota</span><b id="kKm">0</b></div>
+          <div class="kpi"><span>Pacotes</span><b id="kPk">0</b></div>
+        </div>
+        <pre class="report" id="report"></pre>
+        <div class="row wrap">
+          <button class="btn primary" id="shareRep">Enviar no WhatsApp</button>
+          <button class="btn ghost" id="copyRep">Copiar</button>
+          <button class="btn ghost" id="xlsRep">Baixar planilha</button>
+        </div>
+        <button class="btn dark big" id="closeDay" style="margin-top:10px">Encerrar o dia</button>
+
+        <div id="maintBox" style="margin-top:22px"></div>
+
+        <div class="sec-h" style="margin-top:22px"><h2 class="sec">Calendário de ganhos</h2>
+          <div class="yearnav"><button class="iconbtn" id="yPrev" aria-label="Ano anterior">‹</button><b id="yLabel">2026</b><button class="iconbtn" id="yNext" aria-label="Próximo ano">›</button></div></div>
+        <div class="ykpis" id="yKpis"></div>
+        <button class="btn ghost" data-act="irmei" style="width:100%;margin-top:8px">Relatório anual para Imposto de Renda / MEI</button>
+        <p class="hint" style="margin-top:10px">Toque num dia para ver os detalhes ou lançar um dia que você trabalhou sem o app.</p>
+        <div class="year" id="history"></div>
+      </section>
+    </main>
+  </div>
+
+  <nav class="nav" aria-label="Navegação">
+    <button data-s="rota" aria-current="page"><svg viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>Rota</button>
+    <button data-s="paradas"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Paradas</button>
+    <button class="navmic" id="voiceFab" aria-label="Falar com o DeliveRota"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+    <button data-s="add"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Adicionar</button>
+    <button data-s="resumo"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Painel</button>
+  </nav>
+</div>
+
+<button class="helpfab" data-act="help" aria-label="Assistente: tirar dúvidas"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/><path d="M9.6 9.6a2.5 2.5 0 0 1 4.8.9c0 1.6-2.4 2.1-2.4 3.3M12 16.6h.01"/></svg><span>Dúvidas</span></button>
+<div class="vbubble" id="vbubble" hidden role="status"><b id="vbTitle">Ouvindo...</b><span id="vbText">Diga um comando, por exemplo "entregue" ou "qual a próxima"</span><button class="btn ghost sm" id="vbHelp">Ver comandos</button></div>
+<div class="auth" id="auth" hidden>
+  <div class="auth-card">
+    <div class="auth-brand"><img src="icons/icon-192.png" alt=""><div><b>DeliveRota</b><span>Sua rota, seu ganho, no seu bolso.</span></div></div>
+    <form id="authForm" autocomplete="on" novalidate>
+      <h2 id="authTitle">Entrar</h2>
+      <div class="field" id="fName" hidden><label for="aName">Seu nome</label><input id="aName" autocomplete="name"></div>
+      <div class="field"><label for="aEmail">E-mail</label><input id="aEmail" type="email" autocomplete="email" inputmode="email" required></div>
+      <div class="field" id="fPass"><label for="aPass">Senha</label><div class="pass"><input id="aPass" type="password" autocomplete="current-password" minlength="6" required><button type="button" class="eye" id="aEye" aria-label="Mostrar senha" aria-pressed="false"><svg class="eye-on" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18M10.6 5.1A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div></div>
+      <div class="field" id="fPass2" hidden><label for="aPass2">Repita a senha</label><input id="aPass2" type="password" autocomplete="new-password" minlength="6"></div>
+      <label class="check" id="fRemember"><input type="checkbox" id="aRemember" checked> Manter conectado neste aparelho</label>
+      <p class="auth-err" id="authErr" role="alert" hidden></p>
+      <button class="btn primary big" type="submit" id="authGo">Entrar</button>
+      <div class="auth-links"><button type="button" id="authForgot">Esqueci minha senha</button><button type="button" id="authSwitch">Criar conta grátis</button></div>
+      <p class="auth-mode" id="authMode"></p>
+    </form>
+  </div>
+</div>
+<div id="sheetHost"></div>
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="firebase-config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

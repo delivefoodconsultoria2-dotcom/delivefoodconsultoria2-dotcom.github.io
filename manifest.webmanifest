@@ -1,0 +1,99 @@
+{
+  "id": "/",
+  "name": "DeliveRota",
+  "short_name": "DeliveRota",
+  "description": "Roteirizador para entregadores: monte a rota por QR code, foto, planilha, PDF, voz ou texto.",
+  "lang": "pt-BR",
+  "start_url": "./?origem=app",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#FFFFFF",
+  "theme_color": "#18A957",
+  "categories": [
+    "navigation",
+    "productivity",
+    "business"
+  ],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Falar com o app",
+      "url": "./?acao=voz",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Bipar pacotes",
+      "url": "./?acao=bipar",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Adicionar endereços",
+      "url": "./?acao=adicionar",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "share_target": {
+    "action": "./__share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "files",
+          "accept": [
+            "audio/*",
+            ".opus",
+            ".ogg",
+            ".m4a",
+            "image/*",
+            "application/pdf",
+            ".pdf",
+            ".xlsx",
+            ".xls",
+            ".csv",
+            "text/csv",
+            "text/plain"
+          ]
+        }
+      ]
+    }
+  }
+}
