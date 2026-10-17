@@ -168,18 +168,58 @@ async function geocodeStop(s) {
   if (!g && s.cep) { const v = await viaCep(s.cep); if (v) g = await nominatim({ q: `${v.logradouro}, ${v.localidade}` }); }
   return g;
 }
-function queueGeocode(s) { s.geo = "busy"; geoQueue.push(s.id); runGeo(); }
+/* busca rápida: Photon (vários ao mesmo tempo) → Nominatim (um por vez) só para o que faltar */
+const geoKey = s => ["g2", s.street, /^\d+/.test(s.num || "") ? s.num.match(/^\d+/)[0] : "", s.bairro, s.city || st.settings.city, digits(s.cep)].map(x => String(x || "").toLowerCase().trim()).join("|");
+async function photon(s) {
+  const city = s.city || st.settings.city || ""; const cityName = city.split(" - ")[0];
+  const num = /^\d+/.test(s.num || "") ? s.num.match(/^\d+/)[0] : "";
+  if (!s.street) return null;
+  const q = [s.street + (num ? " " + num : ""), s.bairro, cityName].filter(Boolean).join(", ");
+  const bias = st.start || st.cityCenter || { lat: REGION.center[0], lng: REGION.center[1] };
+  const u = new URL("https://photon.komoot.io/api/");
+  u.searchParams.set("q", q); u.searchParams.set("limit", "3"); u.searchParams.set("lat", bias.lat); u.searchParams.set("lon", bias.lng);
+  const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 7000);
+  try {
+    const r = await fetch(u, { signal: ctl.signal }); if (!r.ok) return null;
+    const j = await r.json();
+    const ok = (j.features || []).find(f => (f.properties.countrycode || "").toUpperCase() === "BR" && hav({ lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] }, bias) < 120);
+    return ok ? { lat: ok.geometry.coordinates[1], lng: ok.geometry.coordinates[0] } : null;
+  } catch (e) { return null; } finally { clearTimeout(to); }
+}
+let geoRenderT = null;
+function geoRender(fim) { clearTimeout(geoRenderT); if (fim) { renderAll(true); return; } geoRenderT = setTimeout(() => renderAll(false), 300); }
+function queueGeocode(s) { s.geo = "busy"; geoQueue.push(s.id); clearTimeout(runGeo.t); runGeo.t = setTimeout(runGeo, 50); }
 async function runGeo() {
   if (geoBusy) return; geoBusy = true;
   while (geoQueue.length) {
-    const s = st.stops.find(x => x.id === geoQueue[0]); geoQueue.shift();
-    if (!s) continue;
-    if (!navigator.onLine) { s.geo = "fail"; continue; }
-    try { const g = await geocodeStop(s); if (g) { s.lat = g.lat; s.lng = g.lng; s.geo = "ok"; } else s.geo = "fail"; }
-    catch (e) { s.geo = "fail"; }
-    save(); renderAll(true);
+    const ids = geoQueue.splice(0); const lista = ids.map(id => st.stops.find(x => x.id === id)).filter(Boolean);
+    if (!navigator.onLine) { lista.forEach(s => s.geo = "fail"); save(); geoRender(); continue; }
+    // CEP sem rua: completa pelo ViaCEP primeiro
+    await Promise.all(lista.filter(s => s.cep && (!s.street || !(s.city || st.settings.city))).map(async s => { const v = await viaCep(s.cep); if (v) { s.street = s.street || v.logradouro; s.bairro = s.bairro || v.bairro; s.city = s.city || `${v.localidade} - ${v.uf}`; } }));
+    // endereços iguais: busca uma vez só
+    const grupos = new Map(); lista.forEach(s => { const k = geoKey(s); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(s); });
+    const aplica = (grupo, g) => { grupo.forEach(s => { if (g) { s.lat = g.lat; s.lng = g.lng; s.geo = "ok"; } }); };
+    const faltam = [];
+    // 1) memória do aparelho
+    for (const [k, grupo] of grupos) { const c = await dbGet("kv", k); if (c) aplica(grupo, c); else faltam.push([k, grupo]); }
+    geoRender();
+    // 2) Photon, 5 ao mesmo tempo
+    const depois = []; let i = 0;
+    await Promise.all(Array.from({ length: Math.min(5, faltam.length) }, async () => {
+      while (i < faltam.length) {
+        const [k, grupo] = faltam[i++]; const g = await photon(grupo[0]);
+        if (g) { aplica(grupo, g); dbSet("kv", k, g); geoRender(); } else depois.push([k, grupo]);
+      }
+    }));
+    save();
+    // 3) o que o Photon não achou: Nominatim, um por vez (regra do serviço)
+    for (const [k, grupo] of depois) {
+      let g = null; try { g = await geocodeStop(grupo[0]); } catch (e) {}
+      if (g) { aplica(grupo, g); dbSet("kv", k, g); } else grupo.forEach(s => s.geo = "fail");
+      save(); geoRender();
+    }
   }
-  geoBusy = false;
+  geoBusy = false; save(); geoRender(true);
   autoOtimizar();
   const fails = st.stops.filter(s => s.geo === "fail").length;
   if (fails) toast(`${fails} endereço(s) não encontrados no mapa. Toque na parada para ajustar.`);
