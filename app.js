@@ -180,6 +180,7 @@ async function runGeo() {
     save(); renderAll(true);
   }
   geoBusy = false;
+  autoOtimizar();
   const fails = st.stops.filter(s => s.geo === "fail").length;
   if (fails) toast(`${fails} endereço(s) não encontrados no mapa. Toque na parada para ajustar.`);
 }
@@ -248,7 +249,8 @@ function addStops(list, { geocode = true } = {}) {
   const added = list.map(newStop);
   st.stops.push(...added);
   added.forEach(s => { if (!hasGeo(s) && geocode) queueGeocode(s); });
-  save(); renderAll(true);
+  if (!rotaComecou()) st.otimizada = false;
+  save(); renderAll(true); autoOtimizar();
   return added;
 }
 const byId = id => st.stops.find(s => s.id === id);
@@ -340,14 +342,30 @@ function navLinks(s) {
 function renderNext() {
   const box = $("#nextBox"), p = pending();
   if (!st.stops.length) {
-    box.innerHTML = `<div class="empty"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>
-      <h3>Monte a rota de hoje</h3><p>Bipe o QR code dos pacotes, fotografe a etiqueta, importe a planilha ou cole a lista do WhatsApp.</p>
-      <div class="stack"><button class="btn primary" data-go="add">Adicionar endereços</button><button class="btn ghost" data-act="sample">Ver com rota de exemplo</button></div></div>`;
+    if (st.started) { st.started = false; save(); }
+    box.innerHTML = `<div class="cta-box">
+      <h3>Rota de hoje</h3><p>Bipe os pacotes, mande a foto da etiqueta, a planilha ou a lista do WhatsApp.</p>
+      <button class="btn primary cta" data-go="add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>CARREGAR ROTA</button>
+      <button class="link-btn" data-act="sample">Testar com uma rota de exemplo</button></div>`;
     return;
   }
   if (!p.length) {
     box.innerHTML = `<div class="empty"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.4"><circle cx="12" cy="12" r="10"/><path d="m7 12 3.5 3.5L17 9"/></svg>
-      <h3>Rota concluída</h3><p>Veja quanto você fez hoje e envie o relatório.</p><button class="btn primary" data-go="resumo">Ver resumo do dia</button></div>`;
+      <h3>Rota concluída</h3><p>Veja quanto você fez hoje e envie o relatório.</p><button class="btn primary" data-go="resumo">Ver resumo do dia</button>
+      <button class="btn ghost" data-act="newroute" style="margin-top:10px;width:100%">Carregar nova rota</button></div>`;
+    return;
+  }
+  if (!rotaComecou()) {
+    const busy = p.filter(x => x.geo === "busy").length, semMapa = p.filter(x => !hasGeo(x) && x.geo !== "busy").length;
+    const km = routeKm(p.filter(hasGeo), lastPoint());
+    const fim = new Date(Date.now() + (km / SPEED[st.settings.vehicle] * 60 + p.length * st.settings.stopMin) * 60000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    box.innerHTML = `<div class="cta-box ready">
+      <h3>${busy ? "Organizando a rota..." : "Rota pronta"}</h3>
+      <div class="ready-n"><b>${p.length}</b><span>parada${p.length > 1 ? "s" : ""}${km ? ` · ${km1(km)} km` : ""}${busy ? "" : ` · fim ~${fim}`}</span></div>
+      ${busy ? `<p>Achando ${busy} endereço(s) no mapa. A rota é otimizada sozinha em seguida.</p>` : `<p>${st.otimizada ? "Já está na melhor ordem." : "Toque em começar: o app organiza a melhor ordem."}${semMapa ? ` ${semMapa} endereço(s) sem local no mapa ficam no fim.` : ""}</p>`}
+      <button class="btn primary cta" data-act="start" ${busy ? "disabled" : ""}><svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>COMEÇAR ROTA</button>
+      <div class="row" style="margin-top:10px"><button class="btn warn" data-act="cancelroute">Cancelar rota</button><button class="btn ghost" data-go="add">Adicionar mais</button></div>
+      <button class="link-btn" data-go="paradas">Ver a lista de paradas</button></div>`;
     return;
   }
   const s = p[0], L2 = navLinks(s), grp = sameBuildingCount(s), dist = hav(lastPoint(), s);
@@ -383,7 +401,39 @@ function renderNext() {
       <div class="row"><button class="btn warn" data-fail="${s.id}">Não consegui entregar</button><button class="btn ghost" data-skip="${s.id}" style="flex:0 0 96px">Pular</button></div>
     </div></div>
     ${later.length ? `<div class="later"><h3>A seguir</h3>${later.map(x => `<div class="later-row" data-open="${x.id}"><span class="badge">${stopNumber(x)}</span><div><b>${esc(addrLine(x))}</b><span>${esc([x.comp, x.bairro, x.client].filter(Boolean).join(" · ") || "—")}</span></div></div>`).join("")}</div>` : ""}
-    ${p.length > 1 ? `<a class="btn ghost" style="margin-top:12px" target="_blank" rel="noopener" href="${fullRouteLink()}">Abrir as próximas ${Math.min(p.length, 10)} paradas no Google Maps</a>` : ""}`;
+    ${p.length > 1 ? `<a class="btn ghost" style="margin-top:12px" target="_blank" rel="noopener" href="${fullRouteLink()}">Abrir as próximas ${Math.min(p.length, 10)} paradas no Google Maps</a>` : ""}
+    <button class="btn warn" data-act="cancelroute" style="margin-top:12px;width:100%">Cancelar rota</button>`;
+}
+/* ---------- fluxo simples: carregar → otimizar sozinho → começar → cancelar ---------- */
+function rotaComecou() { return !!st.started || st.stops.some(s => s.status !== "pending"); }
+let autoOptT = null;
+function autoOtimizar() {
+  if (rotaComecou()) return;
+  clearTimeout(autoOptT);
+  autoOptT = setTimeout(() => {
+    const p = pending();
+    if (rotaComecou() || p.some(x => x.geo === "busy") || p.filter(hasGeo).length < 2) { if (p.length) renderAll(false); return; }
+    optimize(); st.otimizada = true; save(); renderNext();
+  }, 400);
+}
+function comecarRota() {
+  const p = pending(); if (!p.length) return;
+  if (!st.otimizada && p.filter(hasGeo).length >= 2) optimize();
+  st.started = true; st.otimizada = true; save(); renderAll(true);
+  const s = pending()[0]; if (!s) return;
+  toast("Rota começou. Boa entrega!");
+  if (st.settings.speak) try { speak("Rota começou. Primeira entrega: " + s.street + ", " + spokenNum(s.num || "sem número") + "."); } catch (e) {}
+  const L2 = navLinks(s); const url = st.settings.nav === "google" ? L2.gmaps : L2.waze;
+  setTimeout(() => window.open(url, "_blank", "noopener"), 600);
+}
+function cancelarRota(btn) {
+  const feitas = st.stops.filter(s => s.status !== "pending").length;
+  twoTap(btn, feitas ? "Toque de novo: tira as pendentes" : "Toque de novo para cancelar", () => {
+    st.stops = st.stops.filter(s => s.status !== "pending");
+    if (!st.stops.length) { st.started = false; st.otimizada = false; }
+    save(); renderAll(true);
+    toast(feitas ? "Paradas pendentes removidas. As entregas feitas continuam no resumo." : "Rota cancelada. Pode carregar outra.");
+  });
 }
 function fullRouteLink() {
   const p = pending().slice(0, 10);
@@ -632,7 +682,7 @@ function settingsSheet() {
     $("#cfGps").addEventListener("click", () => useGps(true));
     $("#cfMap").addEventListener("click", () => { closeSheet(); go("rota"); setPinMode("start"); });
     $("#cfSample").addEventListener("click", () => { closeSheet(); loadSample(); });
-    $("#cfClear").addEventListener("click", e => twoTap(e.currentTarget, "Toque de novo para apagar tudo", () => { st.stops = []; save(); closeSheet(); renderAll(true); toast("Rota apagada"); }));
+    $("#cfClear").addEventListener("click", e => twoTap(e.currentTarget, "Toque de novo para apagar tudo", () => { st.stops = []; st.started = false; st.otimizada = false; save(); closeSheet(); renderAll(true); toast("Rota apagada"); }));
     const inst = $("#cfInstall"); if (inst) inst.addEventListener("click", async () => { deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; closeSheet(); });
     $("#cfVeh").addEventListener("change", e => { $("#cfKml").value = KML_DEFAULT[e.target.value] || 0; $("#cfOther").value = OTHER_KM_DEFAULT[e.target.value] || 0; });
     $("#cfSave").addEventListener("click", () => {
@@ -902,7 +952,7 @@ function loadSample() {
   st.start = { lat: -19.9320, lng: -43.9378, label: "Exemplo: ponto de coleta na Praça da Liberdade" };
   if (!st.settings.city) st.settings.city = "Belo Horizonte - MG";
   addStops(S.map((r, i) => ({ street: r[0], num: r[1], comp: r[2], client: r[3], phone: r[4], lat: r[5], lng: r[6], win: r[7], ref: r[8], bairro: BAIRRO[i], city: "Belo Horizonte - MG", code: "EX" + (48210730 + i * 137), pk: i % 4 === 0 ? 2 : 1, src: "exemplo" })), { geocode: false });
-  toast("Rota de exemplo carregada. Toque em Otimizar rota.");
+  toast("Rota de exemplo carregada e organizada. Toque em Começar rota.");
   go("rota");
 }
 
@@ -1717,7 +1767,7 @@ const KB = [
   { t: "Áudio do WhatsApp com endereço", k: "audio whatsapp mensagem voz cliente gravado transcrever", a: "Em <b>Adicionar → Áudio do WhatsApp</b>, escolha o áudio (ou compartilhe do WhatsApp). O app transcreve e acha rua e número. Na primeira vez baixa o reconhecedor (uns 80 MB).", go: "add", mode: "audio" },
   { t: "Ditar endereço por voz", k: "ditar falar endereco voz microfone", a: "Em <b>Adicionar → Ditar</b>, toque no microfone e fale, por exemplo: \"Rua Harmonia, 456, casa 2\". Confira os campos e toque em Adicionar parada. Ou use o microfone verde e diga \"adicionar rua tal, número tal\".", go: "add", mode: "voice" },
   { t: "Marcar ponto no mapa", k: "mapa tocar ponto marcar alfinete pin local", a: "Toque no botão do <b>alfinete</b> no mapa e depois no local da entrega. O app descobre a rua e o número mais próximos.", go: "rota" },
-  { t: "Otimizar a rota", k: "otimizar organizar ordem melhor rota caminho mais curto", a: "Depois de adicionar as paradas, toque em <b>Otimizar rota</b> no mapa. O app coloca primeiro as prioridades e quem tem horário até 12h, e organiza o resto pelo caminho mais curto. Funciona com 100 paradas ou mais.", go: "rota" },
+  { t: "Otimizar a rota", k: "otimizar organizar ordem melhor rota caminho mais curto", a: "É automático: toque em <b>Carregar rota</b>, coloque os endereços e o app já organiza a melhor ordem (prioridades e horário até 12h primeiro). Depois é só tocar em <b>Começar rota</b>. Puxou a rota errada? Toque em <b>Cancelar rota</b> e carregue outra.", go: "rota" },
   { t: "Ponto de partida e cidade", k: "partida inicio localizacao gps cidade onde entrego comeca", a: "Em <b>Configurações → Rota</b>: escreva a cidade (ex.: Belo Horizonte - MG) e toque em <b>Usar minha localização</b> ou <b>Escolher no mapa</b>. O botão de mira no mapa também usa sua localização.", act: "settings" },
   { t: "Marcar entrega feita", k: "entregue entreguei marcar feita concluir comprovante foto recebeu", a: "Na próxima entrega, toque em <b>Entregue</b>. Se quiser, tire foto do comprovante e escolha quem recebeu. O app guarda horário e GPS. Por voz: diga \"entreguei\".", go: "rota" },
   { t: "Não consegui entregar", k: "nao entreguei ausente recusou fechado problema motivo tentativa", a: "Toque em <b>Não consegui entregar</b>, escolha o motivo e, se puder, tire foto do local como prova. A rota segue para a próxima. Para tentar de novo depois, abra a parada e toque em <b>Voltar para pendente</b>.", go: "rota" },
@@ -1816,6 +1866,9 @@ document.addEventListener("click", e => {
   if (d.s) go(d.s);
   if (d.go) go(d.go);
   if (d.act === "sample") loadSample();
+  if (d.act === "start") comecarRota();
+  if (d.act === "cancelroute") cancelarRota(t);
+  if (d.act === "newroute") { st.stops = []; st.started = false; st.otimizada = false; save(); renderAll(true); go("add"); }
   if (d.act === "goal") goalSheet();
   if (d.act === "odo") odoSheet();
   if (d.act === "sos") sosSheet();
@@ -1840,7 +1893,7 @@ document.addEventListener("click", e => {
   if (t.id === "impGo") confirmImport();
 });
 document.addEventListener("change", e => { if (e.target.dataset.imp != null) importList[+e.target.dataset.imp].ok = e.target.checked; });
-$("#optBtn").addEventListener("click", optimize);
+$("#optBtn").addEventListener("click", () => { optimize(); st.otimizada = true; save(); renderNext(); });
 $("#locBtn").addEventListener("click", () => useGps(false));
 $("#pinBtn").addEventListener("click", () => setPinMode(pinMode === "new" ? null : "new"));
 $("#setBtn").addEventListener("click", settingsSheet);
