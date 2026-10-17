@@ -1,5 +1,5 @@
 /* DeliveRota — funciona sem internet depois da primeira abertura */
-const VERSION = "deliverota-v4";
+const VERSION = "deliverota-v6";
 const SHELL = ["./", "index.html", "app.css", "app.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 const LIB_HOSTS = ["unpkg.com", "cdn.jsdelivr.net", "cdnjs.cloudflare.com", "cdn.sheetjs.com", "fonts.googleapis.com", "fonts.gstatic.com", "www.gstatic.com"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
@@ -19,6 +19,8 @@ self.addEventListener("fetch", e => {
   }
   if (req.method !== "GET") return;
   const url = new URL(req.url);
+  // servidor de pagamento: nunca guardar (sempre a resposta na hora)
+  if (url.pathname.endsWith(".php") || url.pathname.includes("/api/")) return;
   // app: rede primeiro (pega atualizações), cache se estiver sem internet
   if (url.origin === location.origin) {
     e.respondWith(fetch(req).then(r => { const copy = r.clone(); caches.open(VERSION).then(c => c.put(req, copy)); return r; })

@@ -575,7 +575,8 @@ function settingsSheet() {
   const S = st.settings; const rates = S.platRates || {};
   sheet(`<h3>Configurações</h3>
     <div class="acct"><span class="av">${esc((user.name || user.email || "?").charAt(0).toUpperCase())}</span><div><b>${esc(user.name || "")}</b><span>${esc(user.email)}</span></div></div>
-    <div class="row wrap"><button class="btn ghost sm" id="cfPass">Trocar senha</button>${isAdmin() ? `<button class="btn ghost sm" id="cfAdmin">Cadastrar entregador</button>` : ""}<button class="btn warn sm" id="cfOut">Sair da conta</button></div>
+    ${plano ? `<div class="note plano-note"><b>${esc(textoPlano(plano))}</b>${!NA_PLAY && plano.acesso !== "admin" ? `<a class="btn primary sm" href="planos.html">Minha assinatura</a>` : ""}</div>` : ""}
+    <div class="row wrap"><button class="btn ghost sm" id="cfPass">Trocar senha</button>${isAdmin() ? `<button class="btn ghost sm" id="cfAdmin">Cadastrar entregador</button>` : ""}${isAdmin() && PLANOS_ON() ? `<a class="btn ghost sm" href="admin.html">Painel master</a>` : ""}<button class="btn warn sm" id="cfOut">Sair da conta</button></div>
 
     <h4 class="cfg-h">Rota</h4>
     <div class="field"><label for="cfCity">Cidade / região onde você entrega</label><input id="cfCity" list="cfCityList" value="${esc(S.city)}" placeholder="Ex.: Belo Horizonte - MG"><datalist id="cfCityList">${RMBH.map(c => `<option value="${c} - MG">`).join("")}</datalist><span class="hint">Belo Horizonte - MG cobre toda a Grande BH. Pode trocar por qualquer cidade.</span></div>
@@ -1300,7 +1301,7 @@ async function exportPeriod(kind) {
 
 /* ===================== login (e-mail e senha) ===================== */
 const FB = window.DELIVEROTA_FIREBASE || null;
-const ADMINS = (window.DELIVEROTA_ADMINS || ["delivefoodconsultoria2@gmail.com"]).map(e => e.toLowerCase());
+const ADMINS = (window.DELIVEROTA_ADMINS || ["delivefoodconsultoria@gmail.com"]).map(e => e.toLowerCase());
 let user = null, fbAuth = null, authMode = "login", pendingTemp = null;
 const isAdmin = () => user && ADMINS.includes((user.email || "").toLowerCase());
 function tempPassword() { const c = "abcdefghjkmnpqrstuvwxyz23456789"; let s = ""; const r = crypto.getRandomValues(new Uint32Array(8)); r.forEach(x => s += c[x % c.length]); return s.slice(0, 4) + "-" + s.slice(4); }
@@ -1790,7 +1791,7 @@ function askHelp(q) {
   addMsg(esc(q), "me");
   const exact = KB.find(e => e.t === q); const res = exact ? [exact] : helpSearch(q);
   if (!res.length) {
-    addMsg(`Não encontrei isso nas ajudas do app. Tente com outras palavras ou escolha um tema:<div class="chips">${KB.slice(0, 8).map(e => `<button data-hq="${esc(e.t)}">${esc(e.t)}</button>`).join("")}</div>Se ainda precisar, fale com o suporte: <b>delivefoodconsultoria2@gmail.com</b>`, "bot");
+    addMsg(`Não encontrei isso nas ajudas do app. Tente com outras palavras ou escolha um tema:<div class="chips">${KB.slice(0, 8).map(e => `<button data-hq="${esc(e.t)}">${esc(e.t)}</button>`).join("")}</div>Se ainda precisar, fale com o suporte: <b>delivefoodconsultoria@gmail.com</b>`, "bot");
     return;
   }
   const e = res[0], i = KB.indexOf(e);
@@ -1892,6 +1893,78 @@ window.addEventListener("dragover", e => e.preventDefault());
 window.addEventListener("drop", e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (!f) return; go("add"); if (f.type.startsWith("audio/") || /\.(opus|ogg|m4a|mp3|wav)$/i.test(f.name)) { setMode("audio"); handleAudio(Array.from(e.dataTransfer.files)); } else if (f.type.startsWith("image/")) { setMode("photo"); handleOcr(Array.from(e.dataTransfer.files)); } else { setMode("file"); handleDoc(f); } });
 document.addEventListener("paste", e => { if (e.target.closest("input,textarea")) return; const img = Array.from(e.clipboardData.items).find(i => i.type.startsWith("image/")); if (img) { go("add"); setMode("photo"); handleOcr([img.getAsFile()]); } });
 
+/* ===================== plano / assinatura (servidor na Hostinger) ===================== */
+const API = (() => { const a = (window.DELIVEROTA_API || "").trim(); return a ? (a.endsWith("/") ? a : a + "/") : ""; })();
+const PLANOS_ON = () => !!(FB && API && fbAuth && fbAuth.currentUser);
+// aberto pelo app da Play Store? (lá não mostramos botão de compra, regra do Google)
+const NA_PLAY = (() => { try { if (document.referrer.startsWith("android-app://")) sessionStorage.setItem("deliverota-play", "1"); return sessionStorage.getItem("deliverota-play") === "1"; } catch (e) { return false; } })();
+let plano = null, planoQuando = 0;
+function aparelhoId() {
+  try { let id = localStorage.getItem("deliverota-aparelho"); if (!id) { id = "ap-" + Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, "0")).join(""); localStorage.setItem("deliverota-aparelho", id); } return id; }
+  catch (e) { return ""; }
+}
+async function apiCall(arq, corpo) {
+  const tk = await fbAuth.currentUser.getIdToken();
+  const r = await fetch(API + arq, { method: corpo ? "POST" : "GET", headers: { Authorization: "Bearer " + tk, "X-Aparelho": aparelhoId(), ...(corpo ? { "Content-Type": "application/json" } : {}) }, body: corpo ? JSON.stringify(corpo) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw { message: j.erro || "Não consegui falar com o servidor. Tente de novo." };
+  return j;
+}
+const planoCacheKey = () => "deliverota-plano:" + (user && user.uid);
+async function conferirPlano(forcar) {
+  if (!PLANOS_ON()) return null;
+  if (!forcar && plano && Date.now() - planoQuando < 3600e3) return plano;
+  try { plano = await apiCall("status.php"); planoQuando = Date.now(); try { localStorage.setItem(planoCacheKey(), JSON.stringify({ t: Date.now(), p: plano })); } catch (e) {} }
+  catch (e) {
+    // sem internet: usa o último status por até 7 dias; sem nenhum, deixa usar
+    try { const c = JSON.parse(localStorage.getItem(planoCacheKey()) || "null"); if (c && Date.now() - c.t < 7 * 864e5) plano = c.p; } catch (x) {}
+    if (!plano) return null;
+  }
+  aplicarPlano();
+  return plano;
+}
+const fmtData = iso => iso ? new Date(iso).toLocaleDateString("pt-BR") : "";
+const fmtReal = v => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+function textoPlano(p) {
+  if (!p) return "";
+  if (p.acesso === "admin") return "Administrador: acesso total";
+  if (p.acesso === "ativo") return `Plano ${p.plano ? p.plano.charAt(0).toUpperCase() + p.plano.slice(1) : ""} ativo até ${fmtData(p.ate)}`;
+  if (p.acesso === "teste") return `Teste grátis: falta${p.dias_restantes === 1 ? "" : "m"} ${p.dias_restantes} dia${p.dias_restantes === 1 ? "" : "s"}`;
+  if (p.acesso === "precisa_cpf") return "Informe o CPF para liberar o teste grátis";
+  if (p.acesso === "bloqueado") return "Conta bloqueada";
+  return "Teste grátis terminou";
+}
+function aplicarPlano() {
+  const p = plano; const lk = $("#lock");
+  if (!p || p.liberado) { lk.hidden = true; if (p && p.acesso === "teste" && p.dias_restantes <= 3 && !sessionStorage.getItem("deliverota-aviso-teste")) { try { sessionStorage.setItem("deliverota-aviso-teste", "1"); } catch (e) {} toast(textoPlano(p) + ". Veja os planos em Configurações.", 6000); } return; }
+  const card = $("#lockBody"); lk.hidden = false;
+  const sair = `<button class="btn ghost" id="lkOut" type="button">Sair da conta</button>`;
+  if (p.acesso === "precisa_cpf") {
+    card.innerHTML = `<h2>Libere seus ${p.dias_teste} dias grátis</h2><p class="sub">Informe seu CPF para começar o teste com tudo liberado. Cada CPF tem direito a um teste.</p>
+      <div class="field" style="margin-top:12px"><label for="lkCpf">CPF</label><input id="lkCpf" inputmode="numeric" autocomplete="off" placeholder="000.000.000-00" maxlength="14"></div>
+      <p class="auth-err" id="lkErr" role="alert" hidden></p>
+      <button class="btn primary big" id="lkGo" type="button">Começar teste grátis</button><div class="row" style="margin-top:10px">${sair}</div>`;
+    $("#lkCpf").addEventListener("input", e => { const d = digits(e.target.value).slice(0, 11); e.target.value = d.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2"); });
+    $("#lkGo").addEventListener("click", async e => {
+      const b = e.currentTarget, er = $("#lkErr"); b.disabled = true; er.hidden = true;
+      try { plano = await apiCall("cpf.php", { cpf: digits($("#lkCpf").value) }); planoQuando = Date.now(); aplicarPlano(); if (plano.liberado) toast("Pronto! Seu teste grátis começou."); }
+      catch (x) { er.hidden = false; er.textContent = errMsg(x); } finally { b.disabled = false; }
+    });
+  } else if (p.acesso === "bloqueado") {
+    const wa = p.suporte ? `<a class="btn primary" target="_blank" rel="noopener" href="https://wa.me/55${digits(p.suporte)}?text=${encodeURIComponent("Olá! Minha conta do DeliveRota (" + (user.email || "") + ") foi bloqueada.")}">Falar com o suporte</a>` : "";
+    card.innerHTML = `<h2>Conta bloqueada</h2><p class="sub">${esc(p.motivo || "Fale com o suporte.")}</p><div class="row wrap" style="margin-top:14px">${wa}${sair}</div>`;
+  } else {
+    const lista = (p.planos || []).map(x => `<li><b>${esc(x.nome)}</b> ${fmtReal(x.valor)}${x.meses > 1 ? ` <span class="sub">(${fmtReal(x.por_mes)}/mês)</span>` : ""}</li>`).join("");
+    const comprar = NA_PLAY ? `<p class="sub">Para continuar, renove sua assinatura na sua conta DeliveRota pelo navegador.</p>`
+      : `<a class="btn primary big" href="planos.html">Escolher meu plano</a>`;
+    card.innerHTML = `<h2>Seu teste grátis terminou</h2><p class="sub">Seus dados continuam salvos. Assine para voltar a usar.</p><ul class="lk-planos">${lista}</ul>${comprar}
+      <div class="row" style="margin-top:10px"><button class="btn ghost" id="lkRe" type="button">Já paguei</button>${sair}</div>`;
+    $("#lkRe").addEventListener("click", async () => { await conferirPlano(true); if (plano && plano.liberado) toast("Assinatura confirmada. Bom trabalho!"); else toast("Ainda não recebemos a confirmação. Pix confirma em minutos; boleto em até 3 dias úteis.", 6000); });
+  }
+  $("#lkOut").addEventListener("click", logout);
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && user) conferirPlano(false); });
+
 /* ===================== início ===================== */
 $("#authForm").addEventListener("submit", authSubmit);
 $("#authSwitch").addEventListener("click", () => authView(authMode === "login" ? "signup" : "login"));
@@ -1905,6 +1978,7 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
   if (!saved) { const legacy = await dbGet("kv", "state"); if (legacy) { saved = legacy; await dbDel("kv", "state"); } }
   if (saved && saved.stops) st = { ...DEFAULTS, ...saved, settings: { ...DEFAULTS.settings, ...(saved.settings || {}) } };
   applyTheme(); netChip();
+  conferirPlano(true);
   $("#today").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }).replace(/^./, c => c.toUpperCase());
   initMap(); renderAll(true);
   if (!st.onboarded) { if (st.settings.city && (st.stops.length || st.history.length)) st.onboarded = true; else setTimeout(onboardSheet, 300); }

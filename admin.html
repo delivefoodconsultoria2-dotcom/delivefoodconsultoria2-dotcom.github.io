@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Painel master · DeliveRota</title><meta name="theme-color" content="#18A957"><meta name="robots" content="noindex"><link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="conta.css"></head>
+<body>
+<header class="top"><div class="in"><img src="icons/icon-192.png" alt=""><div><b>DeliveRota</b><span>Painel master</span></div><div class="who" id="who"></div></div></header>
+<main id="box"></main>
+<script src="firebase-config.js"></script>
+<script src="conta.js"></script>
+<script>
+(function () {
+  const $ = s => document.querySelector(s), C = window.Conta, esc = C.esc;
+  const box = $("#box"); let d = null, busca = "";
+  const TXT = { admin: "Admin", ativo: "Pagante", teste: "Em teste", precisa_cpf: "Sem CPF", vencido: "Vencido", bloqueado: "Bloqueado" };
+  const quando = ts => ts ? new Date(ts * 1000).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+  async function carregar() { d = await C.api("admin.php?busca=" + encodeURIComponent(busca)); desenhar(); }
+  async function acao(uid, a, extra) { try { await C.api("admin.php?busca=" + encodeURIComponent(busca), { uid, acao: a, ...extra }); await carregar(); } catch (x) { alert(x.message); } }
+  function desenhar() {
+    const t = d.total || {};
+    const al = d.alertas || [], rk = Object.entries(d.mais_suspeitos || {});
+    box.innerHTML = `<div class="kpis"><div class="kpi"><b>${t.t || 0}</b><span>Contas</span></div><div class="kpi"><b>${t.pagantes || 0}</b><span>Pagantes</span></div><div class="kpi"><b>${t.em_teste || 0}</b><span>Em teste</span></div><div class="kpi"><b>${t.bloqueados || 0}</b><span>Bloqueadas</span></div></div>
+      <div class="card"><h3>Suspeitos de várias contas</h3>
+        ${al.length ? `<p class="sub">Quem tentou usar o mesmo celular ou o mesmo CPF em outra conta. A conta nova é bloqueada sozinha; a antiga continua normal.</p>
+        <div class="rank" style="margin-bottom:12px">${rk.map(([e, n]) => `<span>${esc(e)} · ${n}x</span>`).join("")}</div>
+        <div class="lista">${al.map(a => `<div class="item alerta"><div class="l1"><b>${esc(a.email || "?")}</b><span class="pill bloqueado">${a.tipo === "mesmo_cpf" ? "Mesmo CPF" : "Mesmo celular"}</span></div>
+          <div class="l2">Já usado por <b>${esc(a.outro_email || "?")}</b> · ${esc(a.detalhe || "")} · ${quando(a.quando)}</div></div>`).join("")}</div>`
+        : `<p class="sub">Nenhuma tentativa até agora.</p>`}</div>
+      <div class="card"><h3>Contas</h3><div class="row"><input id="q" placeholder="Buscar por e-mail, nome ou CPF" value="${esc(busca)}" style="flex:1;margin:0"><button class="btn ghost" id="qb">Buscar</button></div>
+        <div class="lista" style="margin-top:12px">${(d.contas || []).map(u => `<div class="item"><div class="l1"><b>${esc(u.nome || u.email)}</b><span class="pill ${u.acesso}">${TXT[u.acesso] || u.acesso}</span>${u.plano ? `<span class="pill">${esc(u.plano)}</span>` : ""}</div>
+          <div class="l2">${esc(u.email)} · CPF ${esc(u.cpf || "—")} · criada ${quando(u.criado_em)} · visto ${quando(u.visto_em)}${u.ate_txt ? ` · até ${C.fmtData(u.ate_txt)}` : ""}${u.motivo ? `<br><b>${esc(u.motivo)}</b>` : ""}</div>
+          <div class="row">${+u.bloqueado ? `<button class="btn primary sm" data-a="desbloquear" data-u="${esc(u.uid)}">Desbloquear</button>` : `<button class="btn warn sm" data-a="bloquear" data-u="${esc(u.uid)}">Bloquear</button>`}
+            <button class="btn ghost sm" data-a="dias" data-u="${esc(u.uid)}">Dar dias grátis</button>${u.cpf ? `<button class="btn ghost sm" data-a="limpar_cpf" data-u="${esc(u.uid)}">Liberar CPF</button>` : ""}</div></div>`).join("") || `<p class="sub">Nenhuma conta encontrada.</p>`}</div></div>
+      <a class="btn ghost" href="./">Voltar para o app</a>`;
+    $("#qb").onclick = () => { busca = $("#q").value.trim(); carregar(); };
+    $("#q").onkeydown = e => { if (e.key === "Enter") $("#qb").click(); };
+    box.querySelectorAll("[data-a]").forEach(b => b.addEventListener("click", () => {
+      const a = b.dataset.a, uid = b.dataset.u;
+      if (a === "dias") { const n = parseInt(prompt("Quantos dias liberar para esta conta?", "30"), 10); if (n > 0) acao(uid, a, { dias: n }); return; }
+      if (a === "bloquear" && !confirm("Bloquear esta conta?")) return;
+      if (a === "limpar_cpf" && !confirm("Liberar o CPF desta conta para ser usado em outra?")) return;
+      acao(uid, a);
+    }));
+  }
+  C.iniciar(box, async user => {
+    $("#who").innerHTML = `<span>${esc(user.email)}</span><br><button id="sair">Sair</button>`; $("#sair").onclick = C.sair;
+    try { await carregar(); }
+    catch (x) { box.innerHTML = `<div class="card"><h2>Sem acesso</h2><p class="sub">${esc(x.message)}</p><a class="btn ghost" href="./">Voltar ao app</a></div>`; }
+  });
+})();
+</script>
+</body></html>

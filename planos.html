@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Minha assinatura · DeliveRota</title><meta name="theme-color" content="#18A957"><link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="conta.css"></head>
+<body>
+<header class="top"><div class="in"><img src="icons/icon-192.png" alt=""><div><b>DeliveRota</b><span>Área do cliente</span></div><div class="who" id="who"></div></div></header>
+<main id="box"></main>
+<p class="foot">Pagamento seguro pelo Asaas: Pix, cartão ou boleto. A liberação é automática.<br>DeliveFood Consultoria · CNPJ 57.395.520/0001-68</p>
+<script src="firebase-config.js"></script>
+<script src="conta.js"></script>
+<script>
+(function () {
+  const $ = s => document.querySelector(s), C = window.Conta, esc = C.esc;
+  const box = $("#box"); let st = null, escolhido = null;
+  const TXT = { admin: "Administrador", ativo: "Assinatura ativa", teste: "Teste grátis", precisa_cpf: "Teste ainda não liberado", vencido: "Vencido", bloqueado: "Bloqueada" };
+  const cpfMask = v => v.replace(/\D/g, "").slice(0, 11).replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+  function desenhar(user) {
+    $("#who").innerHTML = `<span>${esc(user.email)}</span><br><button id="sair">Sair</button>`; $("#sair").onclick = C.sair;
+    const p = st; const base = (p.planos.find(x => x.meses === 1) || p.planos[0]).por_mes;
+    const linha = p.acesso === "ativo" ? `Válida até <b>${C.fmtData(p.ate)}</b>${p.assinatura_ativa ? " · renova automaticamente" : " · renovação cancelada"}`
+      : p.acesso === "teste" ? `Faltam <b>${p.dias_restantes} dia${p.dias_restantes === 1 ? "" : "s"}</b> (até ${C.fmtData(p.ate)}). Se assinar agora, você não perde os dias do teste.`
+      : p.acesso === "precisa_cpf" ? `Abra o app e informe seu CPF para começar os ${p.dias_teste} dias grátis, ou assine direto aqui.`
+      : p.acesso === "bloqueado" ? esc(p.motivo || "Fale com o suporte.") : p.acesso === "admin" ? "Acesso total, sem cobrança." : "Seu acesso terminou. Escolha um plano para voltar a usar.";
+    box.innerHTML = `<div class="card"><div class="status"><h2 style="margin:0">Minha assinatura</h2><span class="pill ${p.acesso}">${TXT[p.acesso] || p.acesso}</span></div><p class="sub" style="margin-top:8px">${linha}</p>
+        ${p.assinatura_ativa ? `<button class="btn warn sm" id="cancelar">Cancelar renovação</button>` : ""}</div>
+      ${p.acesso === "bloqueado" || p.acesso === "admin" ? "" : `<div class="card"><h3>${p.acesso === "ativo" ? "Trocar de plano" : "Escolha seu plano"}</h3>
+        <div class="planos">${p.planos.map(x => { const eco = Math.round((1 - x.por_mes / base) * 100); return `<button class="plano" data-id="${esc(x.id)}" aria-pressed="false">${eco > 0 ? `<span class="tag">-${eco}%</span>` : ""}<b>${esc(x.nome)}</b><div class="v">${C.fmtReal(x.valor)}</div><div class="m">${x.meses > 1 ? `${C.fmtReal(x.por_mes)} por mês · cobrado a cada ${x.meses} meses` : "cobrado todo mês"}</div></button>`; }).join("")}</div>
+        ${p.tem_cpf ? "" : `<label>Seu CPF (para a nota da cobrança)<input id="cpf" inputmode="numeric" placeholder="000.000.000-00" maxlength="14"></label>`}
+        <p class="err" id="err" hidden></p>
+        <button class="btn primary" id="assinar" disabled style="width:100%">Escolha um plano acima</button>
+        <p class="sub" style="margin-top:10px">Você vai para a página de pagamento do Asaas. Pix confirma em minutos; cartão na hora; boleto em até 3 dias úteis. Pode cancelar quando quiser.</p></div>`}
+      <a class="btn ghost" href="./">Voltar para o app</a>`;
+    document.querySelectorAll(".plano").forEach(b => b.addEventListener("click", () => {
+      document.querySelectorAll(".plano").forEach(x => x.setAttribute("aria-pressed", x === b)); escolhido = b.dataset.id;
+      const pl = p.planos.find(x => x.id === escolhido); const a = $("#assinar"); a.disabled = false; a.textContent = `Assinar ${pl.nome} · ${C.fmtReal(pl.valor)}`;
+    }));
+    const cpf = $("#cpf"); if (cpf) cpf.addEventListener("input", e => e.target.value = cpfMask(e.target.value));
+    const as = $("#assinar"); if (as) as.addEventListener("click", async () => {
+      const er = $("#err"); er.hidden = true; as.disabled = true; const t = as.textContent; as.textContent = "Gerando pagamento…";
+      try { const r = await C.api("assinar.php", { plano: escolhido, cpf: cpf ? cpf.value : "", nome: user.displayName ? user.displayName.replace(/\|TEMP$/, "") : "" }); location.href = r.link; }
+      catch (x) { er.hidden = false; er.textContent = x.message; as.disabled = false; as.textContent = t; }
+    });
+    const cc = $("#cancelar"); if (cc) cc.addEventListener("click", async () => {
+      if (cc.dataset.ok !== "1") { cc.dataset.ok = "1"; cc.textContent = "Toque de novo para confirmar"; return; }
+      try { st = await C.api("cancelar.php", {}); desenhar(user); } catch (x) { alert(x.message); }
+    });
+  }
+  C.iniciar(box, async user => {
+    try { st = await C.api("status.php"); desenhar(user); }
+    catch (x) { box.innerHTML = `<div class="card"><h2>Ops</h2><p class="sub">${esc(x.message)}</p><button class="btn ghost" onclick="location.reload()">Tentar de novo</button></div>`; }
+  });
+})();
+</script>
+</body></html>

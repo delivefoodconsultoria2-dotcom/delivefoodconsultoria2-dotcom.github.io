@@ -25,3 +25,8 @@ window.DELIVEROTA_ADMINS = ["delivefoodconsultoria@gmail.com", "delivefoodconsul
 /* Link da videoaula (YouTube, Google Drive, etc.). Cole o link entre as aspas.
    Exemplo: window.DELIVEROTA_VIDEO_URL = "https://youtu.be/xxxxxxxx"; */
 window.DELIVEROTA_VIDEO_URL = "";
+
+/* Servidor de planos e pagamento (Hostinger). Vazio = sem planos, tudo liberado.
+   Quando o servidor estiver no ar, coloque o endereço da pasta api, por exemplo:
+   window.DELIVEROTA_API = "https://deliverota.delivefoodconsultoria.com.br/api/"; */
+window.DELIVEROTA_API = "";
