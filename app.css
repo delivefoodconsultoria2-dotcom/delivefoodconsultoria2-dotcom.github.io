@@ -460,3 +460,25 @@ h2.sec{font-size:24px}
 .ready-n span{color:var(--muted);font-weight:700;margin-top:4px}
 .link-btn{background:none;border:0;color:var(--green-strong);font-weight:700;font-size:14px;padding:14px 8px 4px;cursor:pointer}
 #nextBox{margin-bottom:14px}
+
+/* rotas secundárias em cores */
+.g1{--gc:#F28C18}.g2{--gc:#8E5BE8}.g3{--gc:#1E88E5}.g4{--gc:#E0457B}
+.pin.g1,.pin.g2,.pin.g3,.pin.g4{border-color:var(--gc)}
+.pin.next.g1,.pin.next.g2,.pin.next.g3,.pin.next.g4{background:var(--gc);border-color:var(--gc)}
+.badge.g1,.badge.g2,.badge.g3,.badge.g4,.next-num.g1,.next-num.g2,.next-num.g3,.next-num.g4{background:var(--gc)}
+.fact.gtag{background:var(--gc);color:#fff;font-weight:800}
+.gdot{display:inline-block;font-size:11.5px;font-weight:800;color:#fff;background:var(--gc);border-radius:99px;padding:1px 8px;margin-left:4px;vertical-align:2px}
+.legenda{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:2px 0 10px}
+.legenda .lg{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:13.5px;background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:4px 10px}
+.legenda .lg i{width:12px;height:12px;border-radius:50%;background:var(--gc,var(--green))}
+.cta-par{display:flex;gap:10px;align-items:stretch}
+.cta-par .otz{flex:0 0 36%;min-height:78px;border-radius:20px;flex-direction:column;gap:4px;font-size:14px}
+.cta-par .cta{flex:1;font-size:19px}
+.btn.ok-otz{color:var(--green-strong)}
+.novas{display:flex;align-items:center;gap:10px;justify-content:space-between;border:2px solid var(--gc);background:var(--surface-2);border-radius:18px;padding:10px 12px;margin-bottom:12px}
+.novas b{display:block;color:var(--gc);font-size:16px}.novas span{color:var(--muted);font-size:13px}
+.novas .btn{flex:none;min-height:50px}
+.pergunta{font-family:var(--display);font-weight:800;font-size:18px;margin:4px 0 12px}
+.ok-txt{color:var(--green-strong)!important;font-weight:700}
+.cta-par .cta span{display:flex;flex-direction:column;line-height:1.15;align-items:flex-start;font-size:13px;font-weight:700}
+.cta-par .cta span b{font-size:19px;letter-spacing:.03em}
