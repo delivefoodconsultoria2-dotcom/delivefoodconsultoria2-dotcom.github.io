@@ -1527,20 +1527,22 @@ async function fbCreateWithTemp(name, email) {
 
 /* --- tela --- */
 function authView(mode, msg, ok) {
-  authMode = mode; const T = { login: "Entrar", signup: "Criar conta", forgot: "Recuperar senha", newpass: "Crie sua senha definitiva" };
+  authMode = mode; const T = { login: "Entrar", signup: "Criar conta", forgot: "Recuperar senha", newpass: "Crie sua senha" };
   $("#authTitle").textContent = T[mode];
   $("#fName").hidden = mode !== "signup";
   $("#fPass").hidden = mode === "signup" || mode === "forgot";
-  $("#fPass2").hidden = mode !== "newpass";
+  $("#fPass2").hidden = true;
   $("#fRemember").hidden = mode !== "login";
   $("#aEmail").closest(".field").hidden = mode === "newpass";
   $("#aPass").autocomplete = mode === "newpass" ? "new-password" : "current-password";
-  $("label[for=aPass]").textContent = mode === "newpass" ? "Nova senha (mínimo 6 caracteres)" : "Senha";
+  $("label[for=aPass]").textContent = mode === "newpass" ? "Sua senha (mínimo 6 letras ou números)" : "Senha";
   $("#authGo").textContent = { login: "Entrar", signup: "Receber senha provisória", forgot: "Enviar link por e-mail", newpass: "Salvar senha e entrar" }[mode];
   $("#authForgot").hidden = mode !== "login";
   $("#authSwitch").textContent = mode === "login" ? "Primeiro acesso? Criar conta" : "Voltar para Entrar";
   $("#authSwitch").hidden = mode === "newpass";
   const e = $("#authErr"); e.hidden = !msg; e.innerHTML = msg || ""; e.classList.toggle("ok", !!ok);
+  // na tela de criar senha o aviso fica em cima do campo; nas outras, perto do botão
+  if (mode === "newpass") $("#authTitle").after(e); else $("#authGo").before(e);
   $("#authMode").textContent = FB ? "" : "Modo teste: as contas ficam guardadas só neste aparelho.";
   if (mode === "newpass") { $("#aPass").value = ""; $("#aPass2").value = ""; setTimeout(() => $("#aPass").focus(), 50); }
 }
@@ -1549,7 +1551,7 @@ function authInit() {
     const finish = u => { user = u; $("#auth").hidden = true; done(u); };
     window.__authDone = finish;
     if (FB) {
-      try { const u = await fbInit(); if (u) { const fu = fbUser(u); if (!fu.mustChange) return finish(fu); user = fu; $("#auth").hidden = false; return authView("newpass", "Bem-vindo! Crie agora a sua senha definitiva."); } }
+      try { const u = await fbInit(); if (u) { const fu = fbUser(u); if (!fu.mustChange) return finish(fu); user = fu; $("#auth").hidden = false; return authView("newpass", "Falta só um passo: crie a sua senha para entrar.", true); } }
       catch (e) { $("#auth").hidden = false; return authView("login", "Não consegui conectar ao login. Verifique a internet."); }
     } else {
       const s = getSession(); if (s) { const acc = await localAccounts(); const a = acc[(s.email || "").toLowerCase()]; if (a && !a.mustChange) return finish({ uid: a.uid, email: a.email, name: a.name }); }
@@ -1569,11 +1571,11 @@ async function authSubmit(e) {
       if (FB) {
         await fbAuth.setPersistence(remember ? firebase.auth.Auth.Persistence.LOCAL : firebase.auth.Auth.Persistence.SESSION);
         const c = await fbAuth.signInWithEmailAndPassword(email, pass); const fu = fbUser(c.user);
-        if (fu.mustChange) { user = fu; return authView("newpass", "Você entrou com a senha provisória. Agora crie a sua senha definitiva."); }
+        if (fu.mustChange) { user = fu; return authView("newpass", "Falta só um passo: crie a sua senha para entrar.", true); }
         return window.__authDone(fu);
       }
       const a = await localLogin(email, pass); pendingTemp = { a, remember };
-      if (a.mustChange) return authView("newpass", "Você entrou com a senha provisória. Agora crie a sua senha definitiva.");
+      if (a.mustChange) return authView("newpass", "Falta só um passo: crie a sua senha para entrar.", true);
       setSession(a, remember); return window.__authDone({ uid: a.uid, email: a.email, name: a.name });
     }
     if (authMode === "signup") {
@@ -1582,9 +1584,9 @@ async function authSubmit(e) {
         await fbCreateWithTemp(name, email); await fbAuth.sendPasswordResetEmail(email);
         $("#aPass").value = ""; return authView("login", `Conta criada! Enviamos para <b>${esc(email)}</b> um e-mail para você criar sua senha. Depois é só entrar aqui.`, true);
       }
-      const tmp = tempPassword(); await localCreate(name, email, tmp, true);
-      $("#aPass").value = "";
-      return authView("login", `Conta criada! Sua senha provisória é <b style="font-family:var(--mono);font-size:18px">${tmp}</b><br>Entre com ela para criar a senha definitiva.<br><small>No app publicado, essa senha chega por e-mail.</small>`, true);
+      const tmp = tempPassword(); const a = await localCreate(name, email, tmp, true);
+      pendingTemp = { a, remember: true }; try { localStorage.setItem("deliverota-last-email", email); } catch (x) {}
+      return authView("newpass", `Conta criada, ${esc(name.split(" ")[0])}! Agora é só criar a sua senha.`, true);
     }
     if (authMode === "forgot") {
       if (FB) { await fbAuth.sendPasswordResetEmail(email); return authView("login", `Se existir uma conta com <b>${esc(email)}</b>, você vai receber um e-mail com o link para criar uma senha nova. Veja também o spam.`, true); }
@@ -1594,9 +1596,8 @@ async function authSubmit(e) {
       return authView("login", `Senha provisória nova: <b style="font-family:var(--mono);font-size:18px">${tmp}</b><br>Entre com ela para criar a senha definitiva.<br><small>No app publicado, isso chega por e-mail.</small>`, true);
     }
     if (authMode === "newpass") {
-      const p1 = $("#aPass").value, p2 = $("#aPass2").value;
+      const p1 = $("#aPass").value;
       if (p1.length < 6) throw { code: "auth/weak-password" };
-      if (p1 !== p2) throw { message: "As duas senhas não são iguais." };
       if (FB) { const u = fbAuth.currentUser; await u.updatePassword(p1); await u.updateProfile({ displayName: user.name }); return window.__authDone({ ...user, mustChange: false }); }
       const a = await localSetPass(pendingTemp.a.email, p1); setSession(a, pendingTemp.remember);
       return window.__authDone({ uid: a.uid, email: a.email, name: a.name });
