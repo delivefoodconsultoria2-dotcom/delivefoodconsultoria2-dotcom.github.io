@@ -46,7 +46,7 @@ async function dbDel(store, key) { try { const d = await idb(); await new Promis
 
 /* ===================== estado ===================== */
 const DEFAULTS = {
-  gastos: [],
+  gastos: [], agenda: [], planejadas: [], rotaNome: "", rotaData: "",
   stops: [], start: null, history: [], filter: "all",
   settings: { city: "Belo Horizonte - MG", rate: 3.5, vehicle: "moto", stopMin: 3, nav: "google", roundTrip: false, theme: "system",
     speak: true, kml: 0, fuelPrice: 6.19, autoRep: "none", repWa: "", repMail: "", msg: "Olá {nome}! Sou o entregador do seu pedido e chego em cerca de {min} minutos." }
@@ -244,7 +244,7 @@ async function runGeo() {
     await Promise.all(lista.filter(s => s.cep && (!s.street || !(s.city || st.settings.city))).map(async s => { const v = await viaCep(s.cep); if (v) { s.street = s.street || v.logradouro; s.bairro = s.bairro || v.bairro; s.city = s.city || `${v.localidade} - ${v.uf}`; } }));
     // endereços iguais: busca uma vez só
     const grupos = new Map(); lista.forEach(s => { const k = geoKey(s); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(s); });
-    const aplica = (grupo, g) => { grupo.forEach(s => { if (g) { s.lat = g.lat; s.lng = g.lng; s.geo = "ok"; nomeOficial(s, g.p); } }); };
+    const aplica = (grupo, g) => { grupo.forEach(s => { if (g) { s.lat = g.lat; s.lng = g.lng; s.geo = "ok"; nomeOficial(s, g.p); } }); if (g) guardarNaAgenda(grupo); };
     const faltam = [];
     // 1) memória do aparelho
     for (const [k, grupo] of grupos) { const c = await dbGet("kv", k); if (c) aplica(grupo, c); else faltam.push([k, grupo]); }
@@ -286,6 +286,9 @@ const COMP_RE = /\b(apto?\.?|apartamento|ap\b|bloco|bl\.?|casa|cs\.?|fundos|fren
 function parseAddressLine(raw) {
   let line = raw.replace(/\s+/g, " ").trim().replace(/^(\d{1,3}\s*[.)\-–º°]|[-•*–>]|parada\s*\d+\s*[:\-]?)\s+/i, "").replace(/^(endere[cç]o|end\.?|destino|entrega)\s*[:\-]\s*/i, "").trim();
   const out = { raw: raw.trim(), street: "", num: "", comp: "", bairro: "", city: "", cep: "", phone: "" };
+  // código de rastreio do manifesto (Shopee BR…, Mercado Livre, Correios AA123456789BR, Loggi, Amazon TBA…)
+  const cod = line.match(/\b(BR\d{9,}[A-Z]?|AT\d{8,}\w*|TBA\d{9,}|[A-Z]{2}\d{9}[A-Z]{2}|SPX\w{8,}|\d{12,14})\b/);
+  if (cod && !CEP_RE.test(cod[1])) { out.code = cod[1]; line = line.replace(cod[0], " ").replace(/\s+/g, " ").trim(); }
   const cm = line.match(CEP_RE); if (cm) { out.cep = cm[1] + "-" + cm[2]; line = line.replace(cm[0], " ").replace(/\bcep\s*[:.]?\s*/i, " "); }
   const pm = line.match(PHONE_RE); if (pm && digits(pm[1]).length >= 10) { out.phone = pm[1]; line = line.replace(pm[1], " "); }
   line = line.replace(/\s+/g, " ").replace(/[\s,\-–]+$/, "").trim();
@@ -409,7 +412,7 @@ function grupoDoLote() {
 }
 function addStops(list, { geocode = true } = {}) {
   const grupo = grupoDoLote();
-  const added = list.map(newStop); added.forEach(x => x.grupo = grupo);
+  const added = list.map(newStop); added.forEach(x => x.grupo = grupo); guardarNaAgenda(added);
   st.ultimaAdicao = Date.now();
   st.stops.push(...added);
   added.forEach(s => { if (!hasGeo(s) && geocode) queueGeocode(s); });
@@ -511,9 +514,25 @@ function navLinks(s, comProximas) {
     gmaps: `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=driving`
   };
 }
-function renderNext() {
+function modoMapa(on) {
+  const b = document.body, era = b.classList.contains("mapa");
+  b.classList.toggle("mapa", !!on); if (!on) b.classList.remove("folha-cheia");
+  if (era !== !!on && map) { try { map.invalidateSize({ pan: false }); } catch (e) {} }
+}
+function ajustaFolha() {
+  if (!document.body.classList.contains("mapa")) return;
+  requestAnimationFrame(() => {
+    const nb = $("#nextBox"); if (!nb || !nb.offsetHeight) return;
+    const alvo = Math.round(Math.min(nb.offsetHeight + 44, innerHeight * 0.5));
+    document.body.style.setProperty("--folha", alvo + "px");
+    if (map) try { map.invalidateSize({ pan: false }); } catch (e) {}
+  });
+}
+function renderNext() { renderNext0(); ajustaFolha(); }
+function renderNext0() {
   const box = $("#nextBox"), p = pending();
   document.body.classList.remove("pronta", "inicio");
+  modoMapa(st.stops.length > 0);
   if (!st.stops.length) {
     if (st.started) { st.started = false; save(); }
     document.body.classList.add("inicio");
@@ -632,7 +651,7 @@ function cancelarRota(btn) {
   twoTap(btn, curto ? "Cancelar? Toque de novo" : feitas ? "Toque de novo: tira as pendentes" : "Toque de novo para cancelar", () => {
     st.stops = st.stops.filter(s => s.status !== "pending");
     st.queroComecar = false; if (NV.on) pararNavApp();
-    if (!st.stops.length) { st.started = false; st.otimizada = false; st.ultimaAdicao = 0; }
+    if (!st.stops.length) { st.started = false; st.otimizada = false; st.ultimaAdicao = 0; st.rotaNome = ""; st.rotaData = ""; }
     save(); renderAll(true);
     toast(feitas ? "Paradas pendentes removidas. As entregas feitas continuam no resumo." : "Rota cancelada. Pode carregar outra.");
   });
@@ -698,6 +717,7 @@ function renderAddBar() {
 function go(name) {
   document.body.dataset.tab = name;
   if (name === "add") renderAddBar();
+  if (name === "rota") setTimeout(ajustaFolha, 0);
   ["rota", "paradas", "add", "resumo"].forEach(n => $("#s-" + n).hidden = n !== name);
   $$(".nav button").forEach(b => b.dataset.s === name ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
   $(".panel").scrollTop = 0;
@@ -1502,6 +1522,229 @@ function gastoPorVoz(raw) {
   st.gastos = st.gastos || []; st.gastos.push({ id: uid(), iso: isoOf(new Date()), valor: v, cat, desc: "por voz", pag: "", temFoto: false });
   save(); renderGastos(); renderResumo();
   speak(`Gasto lançado: ${String(v).replace(".", ",")} reais de ${catNome(cat).toLowerCase()}.`, true); return true;
+}
+/* ===================== barra rápida, rotas com nome/data, paradas anteriores, compartilhar e manifesto ===================== */
+const AG_MAX = 400;
+function guardarNaAgenda(lista) {
+  st.agenda = st.agenda || [];
+  lista.forEach(s => {
+    if (!s.street) return;
+    const k = (s.street + "|" + s.num + "|" + (s.comp || "")).toLowerCase();
+    const i = st.agenda.findIndex(a => a.k === k); const item = { k, street: s.street, num: s.num, comp: s.comp, bairro: s.bairro, city: s.city, cep: s.cep, client: s.client, phone: s.phone, ref: s.ref, lat: s.lat, lng: s.lng, ult: Date.now(), vezes: 1 };
+    if (i >= 0) { item.vezes = (st.agenda[i].vezes || 1) + 1; if (item.lat == null) { item.lat = st.agenda[i].lat; item.lng = st.agenda[i].lng; } st.agenda.splice(i, 1); }
+    st.agenda.unshift(item);
+  });
+  if (st.agenda.length > AG_MAX) st.agenda.length = AG_MAX;
+}
+function alcaFolha() {
+  if ($("#folhaAlca")) return;
+  $(".panel").insertAdjacentHTML("afterbegin", `<button class="folha-alca" id="folhaAlca" aria-label="Abrir ou fechar o painel"><i></i></button>`);
+  const h = $("#folhaAlca"); let y0 = null;
+  const alterna = abrir => { document.body.classList.toggle("folha-cheia", abrir ?? !document.body.classList.contains("folha-cheia")); setTimeout(() => map && map.invalidateSize({ pan: false }), 260); };
+  h.addEventListener("click", () => alterna());
+  h.addEventListener("touchstart", e => { y0 = e.touches[0].clientY; }, { passive: true });
+  h.addEventListener("touchend", e => { if (y0 == null) return; const dy = e.changedTouches[0].clientY - y0; y0 = null; if (Math.abs(dy) > 25) { e.preventDefault(); alterna(dy < 0); } });
+}
+function quickBar() {
+  alcaFolha();
+  if ($("#qbar")) return;
+  $(".mapcol").insertAdjacentHTML("afterbegin", `<form class="qbar" id="qbar" autocomplete="off">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="qIn" placeholder="Toque para adicionar endereço" aria-label="Adicionar endereço" enterkeyhint="done">
+      <button type="button" class="qb" id="qScan" aria-label="Bipar pacote" title="Bipar pacote"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/></svg></button>
+      <button type="button" class="qb" id="qMic" aria-label="Falar endereço" title="Falar endereço"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+      <button type="button" class="qb" id="qMenu" aria-label="Mais opções" title="Mais opções"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button>
+    </form>`);
+  $("#qbar").addEventListener("submit", e => { e.preventDefault(); adicionarRapido($("#qIn").value); });
+  $("#qScan").addEventListener("click", () => openScanner("add"));
+  $("#qMenu").addEventListener("click", menuRotas);
+  $("#qMic").addEventListener("click", () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { toast("Este navegador não tem reconhecimento de voz"); return; }
+    const r = new SR(); r.lang = "pt-BR"; r.interimResults = true; r.maxAlternatives = 3; let fim = "", alts = [];
+    $("#qMic").classList.add("on"); $("#qIn").placeholder = "Fale o endereço…";
+    r.onresult = e => { const x = e.results[e.results.length - 1]; $("#qIn").value = x[0].transcript; if (x.isFinal) { fim = x[0].transcript; alts = Array.from(x).map(a => a.transcript); } };
+    r.onend = () => { $("#qMic").classList.remove("on"); $("#qIn").placeholder = "Toque para adicionar endereço"; if (fim) adicionarRapido(fim, alts); };
+    r.onerror = () => { $("#qMic").classList.remove("on"); };
+    try { r.start(); } catch (e) {}
+  });
+}
+function adicionarRapido(txt, alts) {
+  txt = String(txt || "").trim(); if (!txt) { $("#qIn").focus(); return; }
+  const t = norm(txt);
+  if (/^(ir |vou |vamos |me leva|leva |bora |partiu|entreg|proxima|navegar|gastei|abasteci|paguei|pular|otimiz)/.test(t)) { $("#qIn").value = ""; handleCommand(txt, alts); return; }
+  // da agenda: o mesmo endereço já usado antes vem com o local certo
+  const a = parseAddressLine(STREET_RE.test(txt) ? txt : "Rua " + txt);
+  if (!a.street || a.street.length < 3) { toast("Escreva rua e número. Ex.: Rua da Bahia, 1148"); return; }
+  const lim = limparEndereco(a); const k = (lim.street + "|" + lim.num + "|" + (lim.comp || "")).toLowerCase();
+  const ag = (st.agenda || []).find(x => x.k === k);
+  addStops([{ ...a, ...(ag && ag.lat != null ? { lat: ag.lat, lng: ag.lng } : {}), src: "rápido" }]);
+  $("#qIn").value = ""; $("#qIn").blur();
+  toast(`Parada adicionada: ${lim.street}, ${lim.num || "s/n"}`);
+}
+function menuRotas() {
+  const tem = st.stops.length > 0, pl = (st.planejadas || []).length;
+  sheet(`<h3>Rotas</h3>${st.rotaNome ? `<p class="sub">Rota atual: <b>${esc(st.rotaNome)}</b>${st.rotaData ? " · " + brOf(st.rotaData) : ""}</p>` : ""}
+    <div class="menu-list">
+      <button data-m="criar"><span>🗓</span><b>Criar rota</b><em>Com nome e data: hoje, amanhã ou outro dia</em></button>
+      <button data-m="salvas"><span>📂</span><b>Rotas salvas</b><em>${pl ? pl + " rota" + (pl > 1 ? "s" : "") + " para os próximos dias" : "Nenhuma ainda"}</em></button>
+      <button data-m="anteriores"><span>↺</span><b>Reutilizar paradas anteriores</b><em>Endereços que você já entregou</em></button>
+      <button data-m="copia"${tem ? "" : " disabled"}><span>⤴</span><b>Compartilhar cópia da rota</b><em>Manda as paradas para outro entregador</em></button>
+      <button data-m="transferir"${tem ? "" : " disabled"}><span>⇄</span><b>Transferir paradas</b><em>Passa paradas para outro entregador e tira da sua rota</em></button>
+      <button data-m="manifesto-foto"><span>📷</span><b>Ler manifesto de rotas</b><em>Foto do manifesto ou da lista da transportadora</em></button>
+      <button data-m="manifesto-arq"><span>📄</span><b>Importar manifesto de rotas</b><em>Planilha, PDF ou texto do manifesto</em></button>
+    </div>`, bg => {
+    bg.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => {
+      const m = b.dataset.m;
+      if (m === "criar") criarRotaSheet();
+      if (m === "salvas") rotasSalvasSheet();
+      if (m === "anteriores") anterioresSheet();
+      if (m === "copia") compartilharSheet(false);
+      if (m === "transferir") compartilharSheet(true);
+      if (m === "manifesto-foto") { closeSheet(); go("add"); setMode("photo"); $("#ocrFile").click(); }
+      if (m === "manifesto-arq") { closeSheet(); go("add"); setMode("file"); $("#docFile").click(); }
+    }));
+  });
+}
+function nomePadrao(iso) { const d = new Date(iso + "T12:00"); const dia = d.toLocaleDateString("pt-BR", { weekday: "long" }); const n = (st.planejadas || []).filter(p => p.data === iso).length + (st.rotaData === iso && st.stops.length ? 1 : 0); return `${dia} Rota ${n + 1}`; }
+function criarRotaSheet() {
+  const hoje = isoOf(new Date()), am = isoOf(new Date(Date.now() + 864e5));
+  let quando = hoje;
+  sheet(`<h3>Criar rota</h3>
+    <div class="field"><label for="crNome">Nome da rota (opcional)</label><input id="crNome" placeholder="${esc(nomePadrao(hoje))}"></div>
+    <div class="field"><label>Data</label><div class="reasons" id="crData">
+      <button aria-pressed="true" data-d="${hoje}"><b>Hoje</b> <span class="sub">${new Date().toLocaleDateString("pt-BR", { weekday: "short", day: "numeric", month: "short" })}</span></button>
+      <button aria-pressed="false" data-d="${am}"><b>Amanhã</b> <span class="sub">${new Date(Date.now() + 864e5).toLocaleDateString("pt-BR", { weekday: "short", day: "numeric", month: "short" })}</span></button>
+      <button aria-pressed="false" data-d="outro"><b>Escolher data</b></button></div>
+      <input id="crOutra" type="date" min="${hoje}" hidden style="margin-top:8px"></div>
+    <label class="check"><input type="checkbox" id="crReusar"> Reutilizar paradas anteriores</label>
+    ${st.stops.some(s => s.status === "pending") ? `<p class="hint" id="crAviso">Você tem uma rota em andamento. ${"Se a nova for para hoje, a atual é guardada em Rotas salvas."}</p>` : ""}
+    <button class="btn primary big" id="crGo">Confirmar</button>`, () => {
+    $$("#crData button").forEach(b => b.addEventListener("click", () => {
+      $$("#crData button").forEach(x => x.setAttribute("aria-pressed", x === b));
+      $("#crOutra").hidden = b.dataset.d !== "outro"; quando = b.dataset.d === "outro" ? ($("#crOutra").value || "") : b.dataset.d;
+      $("#crNome").placeholder = nomePadrao(quando || hoje);
+    }));
+    $("#crOutra").addEventListener("change", e => { quando = e.target.value; $("#crNome").placeholder = nomePadrao(quando || hoje); });
+    $("#crGo").addEventListener("click", () => {
+      if (!quando) { toast("Escolha a data"); return; }
+      const nome = $("#crNome").value.trim() || nomePadrao(quando), reusar = $("#crReusar").checked;
+      if (quando === hoje) {
+        if (st.stops.some(s => s.status === "pending")) { guardarRotaAtual(); }
+        if (!st.stops.some(s => s.status !== "pending")) st.stops = [];
+        st.rotaNome = nome; st.rotaData = hoje; st.started = false; st.otimizada = false; save(); closeSheet(); renderAll(true);
+        if (reusar) anterioresSheet(); else { go("add"); toast(`Rota "${nome}" criada. Adicione as paradas.`); }
+      } else {
+        st.planejadas = st.planejadas || []; const p = { id: uid(), nome, data: quando, stops: [] }; st.planejadas.push(p); save(); closeSheet();
+        if (reusar) anterioresSheet(p.id); else { toast(`Rota "${nome}" salva para ${brOf(quando)}. Adicione as paradas em Rotas salvas.`, 4000); rotasSalvasSheet(); }
+      }
+    });
+  });
+}
+function compacta(s) { return { street: s.street, num: s.num, comp: s.comp, bairro: s.bairro, city: s.city, cep: s.cep, client: s.client, phone: s.phone, code: s.code, pk: s.pk, ref: s.ref, win: s.win, prio: s.prio, lat: s.lat, lng: s.lng }; }
+function guardarRotaAtual() {
+  const pend = st.stops.filter(s => s.status === "pending"); if (!pend.length) return;
+  st.planejadas = st.planejadas || [];
+  st.planejadas.push({ id: uid(), nome: st.rotaNome || "Rota guardada " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }), data: st.rotaData || isoOf(new Date()), stops: pend.map(compacta) });
+  st.stops = st.stops.filter(s => s.status !== "pending");
+}
+function rotasSalvasSheet() {
+  const L_ = (st.planejadas || []).slice().sort((a, b) => a.data < b.data ? -1 : 1);
+  sheet(`<h3>Rotas salvas</h3>${L_.length ? "" : `<p class="sub">Nenhuma rota salva. Use <b>Criar rota</b> e escolha amanhã ou outra data.</p>`}
+    <div class="stack">${L_.map(p => `<div class="rsalva"><div><b>${esc(p.nome)}</b><span>${brOf(p.data)} · ${p.stops.length} parada${p.stops.length === 1 ? "" : "s"}</span></div>
+      <div class="row"><button class="btn ghost sm" data-radd="${p.id}">+ Paradas</button><button class="btn primary sm" data-rabrir="${p.id}">Carregar</button><button class="btn ghost sm" data-rdel="${p.id}" aria-label="Apagar">✕</button></div></div>`).join("")}</div>
+    <button class="btn ghost" data-close style="width:100%;margin-top:10px">Fechar</button>`, bg => {
+    bg.querySelectorAll("[data-rabrir]").forEach(b => b.addEventListener("click", () => carregarPlanejada(b.dataset.rabrir)));
+    bg.querySelectorAll("[data-radd]").forEach(b => b.addEventListener("click", () => anterioresSheet(b.dataset.radd)));
+    bg.querySelectorAll("[data-rdel]").forEach(b => b.addEventListener("click", e => twoTap(e.currentTarget, "Apagar?", () => { st.planejadas = st.planejadas.filter(x => x.id !== b.dataset.rdel); save(); rotasSalvasSheet(); })));
+  });
+}
+function carregarPlanejada(id) {
+  const p = (st.planejadas || []).find(x => x.id === id); if (!p) return;
+  if (!p.stops.length) { toast("Essa rota ainda não tem paradas. Toque em + Paradas."); return; }
+  if (st.stops.some(s => s.status === "pending")) guardarRotaAtual();
+  st.planejadas = st.planejadas.filter(x => x.id !== id);
+  st.rotaNome = p.nome; st.rotaData = isoOf(new Date()); st.started = false; st.ultimaAdicao = 0;
+  addStops(p.stops); closeSheet(); go("rota"); toast(`Rota "${p.nome}" carregada: ${p.stops.length} paradas`);
+}
+function avisoRotaDoDia() {
+  const hoje = isoOf(new Date()); const p = (st.planejadas || []).find(x => x.data <= hoje && x.stops.length);
+  if (!p || st.stops.some(s => s.status === "pending") || $("#sheetHost").innerHTML) return;
+  sheet(`<h3>Rota de hoje pronta</h3><p class="sub">Você salvou <b>${esc(p.nome)}</b> com ${p.stops.length} paradas para ${p.data === hoje ? "hoje" : brOf(p.data)}.</p>
+    <div class="row"><button class="btn ghost" data-close>Agora não</button><button class="btn primary" id="avCarregar">Carregar rota</button></div>`, () => $("#avCarregar").addEventListener("click", () => carregarPlanejada(p.id)));
+}
+function anterioresSheet(destino) {
+  const ag = st.agenda || [];
+  sheet(`<h3>Paradas anteriores</h3><p class="sub">${ag.length ? "Marque os endereços para colocar na rota" + (destino ? " salva" : "") + "." : "Ainda não tem endereços guardados. Eles aparecem aqui depois que você monta rotas."}</p>
+    ${ag.length ? `<input id="anBusca" class="busca" placeholder="Buscar rua, bairro ou cliente">
+    <div class="anlist" id="anList">${ag.map((a, i) => `<label class="imp-row" data-busca="${esc(norm([a.street, a.num, a.bairro, a.client].join(" ")))}"><input type="checkbox" data-an="${i}"><div><b>${esc(a.street + ", " + (a.num || "s/n"))}</b><br><span class="sub">${esc([a.comp, a.bairro, a.client].filter(Boolean).join(" · "))}${a.vezes > 1 ? ` · ${a.vezes}×` : ""}</span></div></label>`).join("")}</div>
+    <button class="btn primary big" id="anGo" style="margin-top:10px">Colocar na rota</button>` : `<button class="btn ghost" data-close style="width:100%">Fechar</button>`}`, () => {
+    if (!ag.length) return;
+    $("#anBusca").addEventListener("input", e => { const q = norm(e.target.value); $$("#anList [data-busca]").forEach(r => r.hidden = q && !r.dataset.busca.includes(q)); });
+    $("#anGo").addEventListener("click", () => {
+      const sel = $$("#anList [data-an]:checked").map(c => ag[+c.dataset.an]); if (!sel.length) { toast("Marque pelo menos um endereço"); return; }
+      const lista = sel.map(a => ({ street: a.street, num: a.num, comp: a.comp, bairro: a.bairro, city: a.city, cep: a.cep, client: a.client, phone: a.phone, ref: a.ref, lat: a.lat, lng: a.lng, src: "anterior" }));
+      const p = destino && (st.planejadas || []).find(x => x.id === destino);
+      if (p) { p.stops.push(...lista); save(); toast(`${lista.length} parada(s) na rota "${p.nome}"`); rotasSalvasSheet(); return; }
+      addStops(lista); closeSheet(); go("rota"); toast(`${lista.length} parada(s) colocadas na rota`);
+    });
+  });
+}
+/* compartilhar: link compactado para mandar no WhatsApp */
+const b64url = u8 => btoa(String.fromCharCode(...u8)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const deb64url = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+async function empacotar(obj) {
+  const raw = new TextEncoder().encode(JSON.stringify(obj));
+  if (window.CompressionStream) { const cs = new Blob([raw]).stream().pipeThrough(new CompressionStream("deflate-raw")); return "z" + b64url(new Uint8Array(await new Response(cs).arrayBuffer())); }
+  let s = ""; for (let i = 0; i < raw.length; i += 8192) s += String.fromCharCode(...raw.subarray(i, i + 8192)); return "j" + btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function desempacotar(s) {
+  const tipo = s[0], u8 = deb64url(s.slice(1));
+  const txt = tipo === "z" ? await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text() : new TextDecoder().decode(u8);
+  return JSON.parse(txt);
+}
+const CAMPOS = ["street", "num", "comp", "bairro", "city", "cep", "client", "phone", "code", "pk", "ref", "lat", "lng"];
+function compartilharSheet(transferir) {
+  const pend = pending(); if (!pend.length) { toast("Nenhuma parada pendente"); return; }
+  sheet(`<h3>${transferir ? "Transferir paradas" : "Compartilhar cópia da rota"}</h3>
+    <p class="sub">${transferir ? "As paradas marcadas vão para o outro entregador e saem da sua rota." : "O outro entregador recebe um link e as paradas entram no DeliveRota dele."}</p>
+    <div class="row" style="margin:6px 0"><button class="btn ghost sm" id="shTodas">Marcar todas</button><button class="btn ghost sm" id="shNenhuma">Desmarcar</button></div>
+    <div class="anlist">${pend.map(s => `<label class="imp-row"><input type="checkbox" data-sh="${s.id}" ${transferir ? "" : "checked"}><div><b>${stopNumber(s)}. ${esc(addrLine(s))}</b><br><span class="sub">${esc([s.comp, s.bairro, s.client].filter(Boolean).join(" · "))}</span></div></label>`).join("")}</div>
+    <button class="btn primary big" id="shGo" style="margin-top:10px">${transferir ? "Transferir pelo WhatsApp" : "Enviar pelo WhatsApp"}</button>
+    <button class="btn ghost" id="shCopiar" style="width:100%;margin-top:8px">Copiar link</button>`, () => {
+    $("#shTodas").addEventListener("click", () => $$("[data-sh]").forEach(c => c.checked = true));
+    $("#shNenhuma").addEventListener("click", () => $$("[data-sh]").forEach(c => c.checked = false));
+    const montar = async () => {
+      const sel = $$("[data-sh]:checked").map(c => byId(c.dataset.sh)).filter(Boolean);
+      if (!sel.length) { toast("Marque pelo menos uma parada"); return null; }
+      const pacote = { v: 1, de: (user && (user.name || user.email)) || "", nome: st.rotaNome || "", p: sel.map(s => CAMPOS.map(k => s[k] ?? "")) };
+      const link = location.origin + location.pathname.replace(/[^/]*$/, "") + "#rota=" + await empacotar(pacote);
+      return { sel, link };
+    };
+    const tirar = sel => { if (!transferir) return; st.stops = st.stops.filter(s => !sel.includes(s)); save(); renderAll(true); };
+    $("#shGo").addEventListener("click", async () => {
+      const r = await montar(); if (!r) return;
+      const msg = `${r.sel.length} parada${r.sel.length > 1 ? "s" : ""} para você no DeliveRota${st.rotaNome ? " (" + st.rotaNome + ")" : ""}. Toque para abrir:\n${r.link}`;
+      openUrl("https://wa.me/?text=" + encodeURIComponent(msg)); tirar(r.sel); closeSheet();
+      toast(transferir ? `${r.sel.length} parada(s) transferidas` : "Link enviado");
+    });
+    $("#shCopiar").addEventListener("click", async () => {
+      const r = await montar(); if (!r) return;
+      try { await navigator.clipboard.writeText(r.link); toast("Link copiado. Cole no WhatsApp do outro entregador."); } catch (e) { prompt("Copie o link:", r.link); }
+      tirar(r.sel); if (transferir) closeSheet();
+    });
+  });
+}
+async function receberRotaDoLink() {
+  const h = location.hash; if (!h.startsWith("#rota=")) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  try {
+    const pk = await desempacotar(h.slice(6));
+    const lista = (pk.p || []).map(a => { const o = {}; CAMPOS.forEach((k, i) => { if (a[i] !== "" && a[i] != null) o[k] = a[i]; }); if (o.lat != null) { o.lat = +o.lat; o.lng = +o.lng; } o.pk = +o.pk || 1; return o; });
+    if (!lista.length) return;
+    go("add"); showImport(lista, "compartilhado");
+    toast(`${pk.de ? pk.de + " te enviou " : "Você recebeu "}${lista.length} parada${lista.length > 1 ? "s" : ""}${pk.nome ? " (" + pk.nome + ")" : ""}`, 5000);
+  } catch (e) { toast("Não consegui abrir esse link de rota. Peça para enviar de novo."); }
 }
 /* ===================== exemplo ===================== */
 
@@ -2543,6 +2786,7 @@ $("#closeDay").addEventListener("click", e => {
 function netChip() { const on = navigator.onLine; const c = $("#netChip"); c.classList.toggle("off", !on); $("span", c).textContent = on ? "Online" : "Sem internet"; }
 window.addEventListener("online", () => { netChip(); st.stops.filter(s => s.geo === "fail" && !hasGeo(s)).forEach(queueGeocode); });
 window.addEventListener("offline", netChip);
+window.addEventListener("resize", () => ajustaFolha());
 window.addEventListener("dragover", e => e.preventDefault());
 window.addEventListener("drop", e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (!f) return; go("add"); if (f.type.startsWith("audio/") || /\.(opus|ogg|m4a|mp3|wav)$/i.test(f.name)) { setMode("audio"); handleAudio(Array.from(e.dataTransfer.files)); } else if (f.type.startsWith("image/")) { setMode("photo"); handleOcr(Array.from(e.dataTransfer.files)); } else { setMode("file"); handleDoc(f); } });
 document.addEventListener("paste", e => { if (e.target.closest("input,textarea")) return; const img = Array.from(e.clipboardData.items).find(i => i.type.startsWith("image/")); if (img) { go("add"); setMode("photo"); handleOcr([img.getAsFile()]); } });
@@ -2634,9 +2878,11 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
   applyTheme(); netChip();
   conferirPlano(true);
   $("#today").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }).replace(/^./, c => c.toUpperCase());
-  initMap(); renderAll(true);
-  if (!st.onboarded) { if (st.settings.city && (st.stops.length || st.history.length)) st.onboarded = true; else setTimeout(onboardSheet, 300); }
-  if (st.onboarded && !st.navAsked) setTimeout(() => { if (!$("#sheetHost").innerHTML) navSheet(); }, 500);
+  initMap(); quickBar(); renderAll(true);
+  setTimeout(() => { if (location.hash.startsWith("#rota=")) receberRotaDoLink(); else avisoRotaDoDia(); }, 900);
+  const veioComRota = location.hash.startsWith("#rota=");
+  if (!st.onboarded) { if (st.settings.city && (st.stops.length || st.history.length)) st.onboarded = true; else if (veioComRota) { st.onboarded = true; st.settings.city = st.settings.city || "Belo Horizonte - MG"; save(); } else setTimeout(onboardSheet, 300); }
+  if (st.onboarded && !st.navAsked && !veioComRota) setTimeout(() => { if (!$("#sheetHost").innerHTML) navSheet(); }, 500);
   if (!st.settings.city) st.settings.city = "Belo Horizonte - MG";
   if (map && st.cityCenter && !st.stops.some(hasGeo) && !st.start) map.setView([st.cityCenter.lat, st.cityCenter.lng], 13);
   st.stops.filter(s => !hasGeo(s) && s.geo !== "fail").forEach(queueGeocode);
@@ -2648,5 +2894,5 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
 })();
 
 // para testes automáticos
-window.DeliveRota = { lerNotinha, gastoSheet, periodData, acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
+window.DeliveRota = { empacotar, desempacotar, receberRotaDoLink, adicionarRapido, lerNotinha, gastoSheet, periodData, acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
 })();

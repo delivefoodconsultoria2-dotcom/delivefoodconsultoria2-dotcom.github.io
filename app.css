@@ -599,3 +599,49 @@ body.navon #toast{top:auto!important;bottom:calc(96px + env(safe-area-inset-bott
 .gval{flex:none;font-size:15px}
 .gasto-mini{flex:none;border:1px dashed var(--line);background:var(--surface);color:var(--green-strong);border-radius:12px;padding:0 12px;font:inherit;font-weight:800;font-size:14px;min-height:44px;cursor:pointer}
 .dayx{grid-template-columns:1fr auto 128px}
+
+/* ===== visual novo: barra rápida e mapa tomando a tela ===== */
+.qbar{position:absolute;left:10px;right:10px;top:10px;z-index:650;display:flex;align-items:center;gap:6px;height:52px;padding:0 6px 0 14px;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 10px 28px -14px rgba(0,0,0,.45);color:var(--muted)}
+.qbar input{flex:1;min-width:0;border:0;background:none;font:inherit;font-size:16px;font-weight:600;color:var(--ink);outline:none;height:100%}
+.qbar input::placeholder{color:var(--muted);font-weight:600}
+.qbar .qb{flex:none;width:40px;height:40px;border:0;border-radius:12px;background:none;color:var(--ink);display:grid;place-items:center;cursor:pointer}
+.qbar .qb:active{background:var(--surface-2)}
+.qbar .qb.on{background:var(--green);color:#fff;animation:pulse 1s infinite}
+body.navon .qbar{display:none}
+.menu-list{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.menu-list button{display:grid;grid-template-columns:36px 1fr;grid-template-rows:auto auto;column-gap:10px;text-align:left;align-items:center;border:0;background:none;color:var(--ink);font:inherit;padding:10px 6px;border-radius:14px;cursor:pointer}
+.menu-list button:not(:disabled):active,.menu-list button:not(:disabled):hover{background:var(--surface-2)}
+.menu-list button:disabled{opacity:.4}
+.menu-list span{grid-row:1/3;width:36px;height:36px;border-radius:11px;background:var(--green-soft,#E6F6EC);display:grid;place-items:center;font-size:17px}
+.menu-list b{font-size:16px}.menu-list em{font-style:normal;font-size:13px;color:var(--muted)}
+.rsalva{border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.rsalva>div:first-child{display:flex;flex-direction:column}.rsalva span{font-size:13px;color:var(--muted);font-weight:700}
+.rsalva .btn.sm{min-height:38px;padding:0 12px}
+.anlist{max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:14px;padding:0 10px}
+.busca{width:100%;height:46px;border:1px solid var(--line);border-radius:12px;padding:0 12px;font:inherit;font-size:16px;margin:8px 0;background:var(--surface);color:var(--ink)}
+.folha-alca{display:none}
+@media (max-width:899px){
+  /* com rota carregada o mapa ocupa a tela e o painel vira uma folha embaixo */
+  body.mapa[data-tab="rota"] .mapcol{flex:1 1 auto;height:auto!important;min-height:0!important;margin:0!important;border-radius:0!important;border:0!important}
+  body.mapa[data-tab="rota"] .panel{flex:none;max-height:var(--folha,45vh);margin-top:-24px;position:relative;z-index:700;border-radius:24px 24px 0 0;background:var(--surface);box-shadow:0 -14px 34px -16px rgba(0,0,0,.45);padding-top:0;transition:max-height .25s ease}
+  body.mapa.folha-cheia[data-tab="rota"] .panel{max-height:84vh}
+  body.mapa.navon[data-tab="rota"]:not(.folha-cheia) .panel{max-height:min(var(--folha,30vh),30vh)}
+  body.mapa[data-tab="rota"] .folha-alca{display:flex;justify-content:center;position:sticky;top:0;z-index:5;width:calc(100% + 28px);margin:0 -14px 2px;height:26px;border:0;background:var(--surface);cursor:pointer;padding-top:9px}
+  body.mapa[data-tab="rota"] .folha-alca i{width:44px;height:5px;border-radius:9px;background:var(--line)}
+  body.mapa[data-tab="rota"] .cta-box.ready{background:none;padding-top:4px}
+  body.mapa[data-tab="rota"] .map-actions{bottom:34px}
+  body.mapa[data-tab="rota"] .navban{top:10px}
+  body.mapa[data-tab="rota"] .navfoot{bottom:34px}
+}
+@media (max-width:899px){
+  body.mapa[data-tab="rota"] .cta-box.ready .ready-line{flex-direction:row;align-items:baseline;flex-wrap:wrap;column-gap:8px}
+  body.mapa[data-tab="rota"] .cta-box.ready .ready-num b{font-size:24px}
+  body.mapa[data-tab="rota"] .cta-box.ready .ready-st:not(.busy){display:none}
+  body.mapa[data-tab="rota"] .cta-box.ready .ready-st.busy{margin:6px 0 8px}
+  body.mapa[data-tab="rota"] .cta-box.ready .ready-line{margin-bottom:10px}
+  body.mapa[data-tab="rota"] .cta-box.ready .btn.cta{min-height:58px;font-size:20px}
+  body.mapa[data-tab="rota"] .cta-box.ready .addmore{min-height:46px;margin-top:8px}
+  body.mapa[data-tab="rota"] .cta-box.ready>.link-btn{display:none}
+  body.mapa[data-tab="rota"] .cta-box.ready{padding-bottom:4px}
+  body.mapa[data-tab="rota"] .cta-box.ready .xclose{top:2px}
+}
