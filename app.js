@@ -46,6 +46,7 @@ async function dbDel(store, key) { try { const d = await idb(); await new Promis
 
 /* ===================== estado ===================== */
 const DEFAULTS = {
+  gastos: [],
   stops: [], start: null, history: [], filter: "all",
   settings: { city: "Belo Horizonte - MG", rate: 3.5, vehicle: "moto", stopMin: 3, nav: "google", roundTrip: false, theme: "system",
     speak: true, kml: 0, fuelPrice: 6.19, autoRep: "none", repWa: "", repMail: "", msg: "Olá {nome}! Sou o entregador do seu pedido e chego em cerca de {min} minutos." }
@@ -679,7 +680,7 @@ function renderResumo() {
   $("#kKm").textContent = km1(routeKm(st.stops.filter(hasGeo), st.start));
   $("#kPk").textContent = st.stops.reduce((a, s) => a + s.pk, 0);
   $("#report").textContent = reportText();
-  renderYear(); renderPeriod(); renderDue(); renderMaint(); meiCheck();
+  renderYear(); renderPeriod(); renderDue(); renderMaint(); meiCheck(); renderGastos();
 }
 function renderAll(fit) { renderStats(); renderNext(); renderList(); renderResumo(); drawMap(fit); renderAddBar(); }
 
@@ -1377,6 +1378,131 @@ function escolherParadaSheet(ops, frase) {
   });
   speak("Achei mais de uma. Toque na certa.", true);
 }
+/* ===================== gastos do dia (manual, foto da notinha ou arquivo) ===================== */
+const GASTO_CATS = [
+  ["combustivel", "Combustível", "⛽"], ["alimentacao", "Alimentação", "🍽"], ["manutencao", "Manutenção", "🔧"],
+  ["estacionamento", "Estacionamento", "🅿"], ["pedagio", "Pedágio", "🛣"], ["lavagem", "Lavagem", "🧽"], ["celular", "Celular / internet", "📱"], ["outros", "Outros", "•"]];
+const catNome = c => (GASTO_CATS.find(x => x[0] === c) || GASTO_CATS[GASTO_CATS.length - 1])[1];
+const catIco = c => (GASTO_CATS.find(x => x[0] === c) || GASTO_CATS[GASTO_CATS.length - 1])[2];
+const gastosDe = (de, ate) => (st.gastos || []).filter(g => g.iso >= de && g.iso <= (ate || de));
+const totalGastos = lista => lista.reduce((a, g) => a + (+g.valor || 0), 0);
+const dinheiro = t => { const m = String(t).replace(/\s/g, "").match(/^(\d{1,3}(?:\.\d{3})*|\d+)(?:,(\d{1,2}))?$/); return m ? parseFloat(m[1].replace(/\./g, "") + "." + (m[2] || "0")) : NaN; };
+/* lê a notinha: valor total, data e tipo de gasto */
+function lerNotinha(texto) {
+  const t = String(texto || ""), T = semAcento(t).toUpperCase();
+  let valor = null;
+  const linhas = T.split(/\n/);
+  const NUMR = "(\\d{1,3}(?:\\.\\d{3})*,\\d{2}|\\d+,\\d{2})";
+  const prioridades = [/VALOR\s*(TOTAL|A\s*PAGAR|PAGO)|TOTAL\s*A\s*PAGAR|VL\.?\s*TOTAL|TOTAL\s*GERAL/, /(^|[^B])TOTAL/];
+  for (const pr of prioridades) {
+    for (const l of linhas) {
+      if (/SUBTOTAL|SUB-TOTAL|SUB TOTAL|TROCO|DESCONTO|TRIBUT|IMPOSTO|APROX|ITENS/.test(l) || !pr.test(l)) continue;
+      const m = l.match(new RegExp(pr.source + "\\D{0,14}" + NUMR)); const nums = l.match(/\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}/g);
+      const v = m ? dinheiro(m[m.length - 1]) : nums ? dinheiro(nums[nums.length - 1]) : NaN;
+      if (v > 0) { valor = v; break; }
+    }
+    if (valor != null) break;
+  }
+  if (valor == null) { const todos = (T.match(/\d{1,3}(?:\.\d{3})*,\d{2}/g) || []).map(dinheiro).filter(v => v > 0 && v < 5000); if (todos.length) valor = Math.max(...todos); }
+  let iso = null; const d = T.match(/\b(\d{2})[\/.-](\d{2})[\/.-](\d{2,4})\b/);
+  if (d) { const y = d[3].length === 2 ? "20" + d[3] : d[3]; const cand = `${y}-${d[2]}-${d[1]}`; if (!isNaN(new Date(cand + "T12:00")) && +d[2] <= 12 && +d[1] <= 31) iso = cand; }
+  const C = [["combustivel", /GASOLINA|ETANOL|ALCOOL|DIESEL|COMBUST|POSTO|LITRO|\bGNV\b|ABASTEC|SHELL|IPIRANGA|PETROBRAS|\bBR\b MANIA/],
+    ["estacionamento", /ESTACION|PARKING|\bPARK\b|ROTATIVO/], ["pedagio", /PEDAGIO|SEM PARAR|CONECTCAR|VELOE/],
+    ["lavagem", /LAVA\s*JATO|LAVAGEM|LAVA-JATO/], ["manutencao", /OFICINA|PNEU|OLEO|MECANIC|PECAS?\b|BORRACHARIA|AUTO\s*PECAS|FILTRO|REVISAO|CORRENTE|RELACAO/],
+    ["alimentacao", /LANCH|RESTAUR|PADARIA|ALIMENT|REFEIC|MERCADO|SUPERMERC|BAR\b|CAFE|PASTEL|MARMIT|SALGAD|REFRIG|AGUA MINERAL/], ["celular", /RECARGA|CLARO|VIVO|\bTIM\b|OI MOVEL|CREDITO CELULAR/]];
+  const cat = (C.find(([, re]) => re.test(T)) || [null])[0];
+  const lit = T.match(/(\d+[.,]\d{1,3})\s*L(ITROS?)?\b/);
+  return { valor, iso, cat, litros: lit ? parseFloat(lit[1].replace(",", ".")) : null };
+}
+async function gastoSheet(g0, preFoto) {
+  const novo = !g0; const g = g0 ? { ...g0 } : { id: uid(), iso: isoOf(new Date()), valor: "", cat: "", desc: "", pag: "", temFoto: false, tipo: "" };
+  let arquivo = null; // Blob novo escolhido agora
+  const urlAntiga = g.temFoto ? await dbGet("photos", "g_" + g.id) : null;
+  sheet(`<div class="sec-h"><h3>${novo ? "Lançar gasto" : "Gasto"}</h3>${novo ? "" : `<span class="pill win">${brOf(g.iso)}</span>`}</div>
+    <p class="sub">Tire foto da notinha ou mande o arquivo: o app lê o valor, a data e o tipo sozinho. Também dá para digitar.</p>
+    <div class="gfoto">
+      <label class="btn primary"><input type="file" id="gCam" accept="image/*" capture="environment" hidden>📷 Foto da notinha</label>
+      <label class="btn ghost"><input type="file" id="gArq" accept="image/*,application/pdf" hidden>📎 Arquivo / PDF</label>
+    </div>
+    <div id="gPrev" class="gprev"${urlAntiga || preFoto ? "" : " hidden"}></div>
+    <p class="hint" id="gLendo" hidden></p>
+    <div class="grid2" style="margin-top:10px">
+      <div class="field"><label for="gValor">Valor (R$)</label><input id="gValor" inputmode="decimal" placeholder="0,00" value="${g.valor !== "" ? String(g.valor).replace(".", ",") : ""}"></div>
+      <div class="field"><label for="gDia">Dia</label><input id="gDia" type="date" value="${g.iso}"></div>
+    </div>
+    <div class="field"><label>Tipo</label><div class="gcats" id="gCats">${GASTO_CATS.map(([k, n, ic]) => `<button type="button" data-gcat="${k}" aria-pressed="${g.cat === k}">${ic} ${n}</button>`).join("")}</div></div>
+    <div class="field"><label for="gDesc">Descrição</label><input id="gDesc" placeholder="Ex.: gasolina do posto da Amazonas, 10 litros" value="${esc(g.desc || "")}"></div>
+    <div class="field"><label for="gPag">Pago com</label><select id="gPag"><option value="">—</option>${["Dinheiro", "Pix", "Cartão de débito", "Cartão de crédito", "Vale / empresa"].map(x => `<option${g.pag === x ? " selected" : ""}>${x}</option>`).join("")}</select></div>
+    <div class="row">${novo ? `<button class="btn ghost" data-close>Cancelar</button>` : `<button class="btn warn" id="gDel">Apagar</button>`}<button class="btn primary" id="gSalvar">${novo ? "Salvar gasto" : "Salvar"}</button></div>`, () => {
+    const mostra = blob => {
+      const box = $("#gPrev"); box.hidden = false;
+      const u = URL.createObjectURL(blob);
+      box.innerHTML = blob.type === "application/pdf" ? `<a class="btn ghost" href="${u}" target="_blank" rel="noopener">📄 Ver PDF da nota</a>` : `<img src="${u}" alt="Foto da notinha">`;
+    };
+    if (urlAntiga) mostra(urlAntiga);
+    $$("#gCats button").forEach(b => b.addEventListener("click", () => { $$("#gCats button").forEach(x => x.setAttribute("aria-pressed", x === b)); g.cat = b.dataset.gcat; }));
+    const preenche = r => {
+      if (r.valor && !$("#gValor").value) $("#gValor").value = r.valor.toFixed(2).replace(".", ",");
+      if (r.iso && r.iso <= isoOf(new Date())) $("#gDia").value = r.iso;
+      if (r.cat && !g.cat) { g.cat = r.cat; $$("#gCats button").forEach(x => x.setAttribute("aria-pressed", x.dataset.gcat === r.cat)); }
+      if (r.cat === "combustivel" && r.litros && !$("#gDesc").value) $("#gDesc").value = `${String(r.litros).replace(".", ",")} litros`;
+    };
+    const recebe = async file => {
+      if (!file) return;
+      const ehPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+      arquivo = ehPdf ? file : await compressPhoto(file).catch(() => file);
+      mostra(arquivo);
+      const st_ = $("#gLendo"); st_.hidden = false; st_.textContent = "Lendo a notinha...";
+      try {
+        let texto = "";
+        if (ehPdf) {
+          await loadScript(LIBS.pdf); pdfjsLib.GlobalWorkerOptions.workerSrc = LIBS.pdfWorker;
+          const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+          for (let p = 1; p <= Math.min(2, pdf.numPages); p++) { const c = await (await pdf.getPage(p)).getTextContent(); texto += c.items.map(i => i.str).join("\n") + "\n"; }
+        } else {
+          await loadScript(LIBS.ocr);
+          const r = await Tesseract.recognize(arquivo, "por", { logger: m => { if (m.status === "recognizing text") st_.textContent = `Lendo a notinha: ${Math.round(m.progress * 100)}%`; } });
+          texto = r.data.text;
+        }
+        const r = lerNotinha(texto); preenche(r);
+        st_.textContent = r.valor ? `Li a nota: R$ ${fmt(r.valor)}${r.cat ? " · " + catNome(r.cat) : ""}. Confira e salve.` : "Não consegui ler o valor. Digite o valor da nota.";
+      } catch (e) { st_.textContent = navigator.onLine ? "Não consegui ler a nota. Digite o valor." : "Sem internet para ler a nota agora. Digite o valor; a foto fica guardada."; }
+    };
+    $("#gCam").addEventListener("change", e => recebe(e.target.files[0]));
+    $("#gArq").addEventListener("change", e => recebe(e.target.files[0]));
+    if (preFoto) recebe(preFoto);
+    $("#gSalvar").addEventListener("click", async () => {
+      const v = dinheiro($("#gValor").value.trim()) || parseFloat($("#gValor").value.replace(",", "."));
+      if (!(v > 0)) { toast("Coloque o valor do gasto"); $("#gValor").focus(); return; }
+      g.valor = Math.round(v * 100) / 100; g.iso = $("#gDia").value || isoOf(new Date()); g.desc = $("#gDesc").value.trim(); g.pag = $("#gPag").value; g.cat = g.cat || "outros";
+      if (arquivo) { await dbSet("photos", "g_" + g.id, arquivo); g.temFoto = true; g.tipo = arquivo.type || ""; }
+      st.gastos = st.gastos || []; const i = st.gastos.findIndex(x => x.id === g.id); if (i >= 0) st.gastos[i] = g; else st.gastos.push(g);
+      save(); closeSheet(); renderGastos(); renderResumo(); toast(`Gasto salvo: R$ ${fmt(g.valor)} · ${catNome(g.cat)}`);
+    });
+    const del = $("#gDel"); if (del) del.addEventListener("click", e => twoTap(e.currentTarget, "Toque de novo para apagar", async () => {
+      st.gastos = st.gastos.filter(x => x.id !== g.id); try { await dbDel("photos", "g_" + g.id); } catch (er) {} save(); closeSheet(); renderGastos(); renderResumo(); toast("Gasto apagado");
+    }));
+  });
+}
+function renderGastos() {
+  const box = $("#gastosBox"); if (!box) return;
+  const hoje = isoOf(new Date()), lista = gastosDe(hoje).sort((a, b) => b.id < a.id ? -1 : 1), tot = totalGastos(lista);
+  box.innerHTML = `<div class="gastos">
+    <div class="gastos-h"><div><b>Gastos de hoje</b><span>${lista.length ? `R$ ${fmt(tot)} em ${lista.length} lançamento${lista.length > 1 ? "s" : ""}` : "Nada lançado ainda"}</span></div>
+      <div class="gastos-bt"><label class="btn primary sm"><input type="file" id="gQuick" accept="image/*" capture="environment" hidden>📷 Notinha</label><button class="btn ghost sm" data-act="gasto">+ Digitar</button></div></div>
+    ${lista.map(g => `<button class="gasto-row" data-gasto="${g.id}"><span class="gico">${catIco(g.cat)}</span><span class="gtx"><b>${esc(catNome(g.cat))}${g.desc ? " · " + esc(g.desc) : ""}</b><em>${g.pag ? esc(g.pag) : ""}${g.temFoto ? (g.pag ? " · " : "") + "com nota" : ""}</em></span><b class="gval">R$ ${fmt(g.valor)}</b></button>`).join("")}</div>`;
+  const q = $("#gQuick"); if (q) q.addEventListener("change", e => { const f = e.target.files[0]; if (f) gastoSheet(null, f); });
+}
+/* "gastei 50 de gasolina" */
+function gastoPorVoz(raw) {
+  const t = norm(raw); const nums = (t.match(/\d+(?:[.,]\d{1,2})?/g) || []).map(x => parseFloat(x.replace(",", ".")));
+  let v = nums.length ? nums[0] : null; if (v == null) { const n = numerosDaFala(t); if (n.length) v = n[0]; }
+  if (!v) return false;
+  const r = lerNotinha(raw); const cat = r.cat || (/abastec|gasolin|etanol|alcool/.test(t) ? "combustivel" : /almoc|lanche|janta|cafe|comi/.test(t) ? "alimentacao" : /estacion/.test(t) ? "estacionamento" : "outros");
+  st.gastos = st.gastos || []; st.gastos.push({ id: uid(), iso: isoOf(new Date()), valor: v, cat, desc: "por voz", pag: "", temFoto: false });
+  save(); renderGastos(); renderResumo();
+  speak(`Gasto lançado: ${String(v).replace(".", ",")} reais de ${catNome(cat).toLowerCase()}.`, true); return true;
+}
 /* ===================== exemplo ===================== */
 
 function loadSample() {
@@ -1452,6 +1578,7 @@ const COMMANDS = [
   ["pular", "Joga a parada para o fim"],
   ["otimizar rota", "Reorganiza as paradas"],
   ["quantas faltam / quanto ganhei", "Fala o andamento do dia"],
+  ["gastei 50 de gasolina / abasteci 80", "Lança o gasto do dia"],
   ["adicionar rua tal, número tal", "Cria uma nova parada"],
   ["bipar pacote", "Abre o leitor de código"],
   ["mãos livres / parar de ouvir", "Liga ou desliga a escuta contínua"]
@@ -1483,6 +1610,7 @@ function handleCommand(raw, alts) {
     if (!a.street || a.street.length < 4) return speak("Não entendi o endereço. Diga, por exemplo: adicionar rua Harmonia, 456.");
     addStops([{ ...a, src: "voz" }]); return speak(`Parada adicionada: ${a.street}, ${spokenNum(a.num || "s/n")}.`);
   }
+  if (/\b(gastei|gasto de|abasteci|paguei)\b/.test(t) && gastoPorVoz(raw)) return;
   if (has("nao entreg", "ninguem em casa", "ausente", "nao tinha ninguem")) return quickFail("Cliente ausente");
   if (has("nao encontr", "nao achei")) return quickFail("Endereço não encontrado");
   if (has("recus")) return quickFail("Recusado pelo cliente");
@@ -1703,11 +1831,13 @@ function periodData(r) {
   const list = Object.values(dayTotals()).filter(d => d.iso >= r.from && d.iso <= r.to).sort((a, b) => a.iso < b.iso ? -1 : 1);
   const T = k => list.reduce((s, d) => s + d[k], 0);
   const km = T("km"), earn = T("earn"), c = costsOf(km, list.length), hours = list.reduce((a, d) => a + (d.hours || 0), 0);
-  return { r, list, days: list.length, done: T("done"), fail: T("fail"), pk: T("pk"), km, earn, fuel: c.fuel, wear: c.wear, fixed: c.fixed, cost: c.total, hours, net: earn - c.total };
+  const gl = gastosDe(r.from, r.to), gComb = totalGastos(gl.filter(g => g.cat === "combustivel")), gOutros = totalGastos(gl.filter(g => g.cat !== "combustivel"));
+  const fuel = gComb > 0 ? gComb : c.fuel, cost = fuel + c.wear + c.fixed + gOutros;
+  return { r, list, days: list.length, done: T("done"), fail: T("fail"), pk: T("pk"), km, earn, fuel, fuelReal: gComb > 0, wear: c.wear, fixed: c.fixed, gastos: gl, gOutros, cost, hours, net: earn - cost };
 }
 function periodText(p) {
   let t = `DeliveRota · Relatório ${p.r.label}\nDias trabalhados: ${p.days}\nEntregas: ${p.done} (${p.pk} pacotes)${p.fail ? `\nNão entregues: ${p.fail}` : ""}\nKm rodados (estimado): ${km1(p.km)}\nGanho: R$ ${fmt(p.earn)}`;
-  t += `\nGasolina: R$ ${fmt(p.fuel)}\nDesgaste do veículo: R$ ${fmt(p.wear)}${p.fixed ? `\nCustos fixos: R$ ${fmt(p.fixed)}` : ""}\nLucro real: R$ ${fmt(p.net)}${p.km ? `\nCusto por km: R$ ${fmt(p.cost / p.km)}` : ""}${p.hours ? `\nLucro por hora: R$ ${fmt(p.net / p.hours)}` : ""}`;
+  t += `\nGasolina${p.fuelReal ? " (notas lançadas)" : ""}: R$ ${fmt(p.fuel)}${p.gOutros ? `\nOutros gastos lançados: R$ ${fmt(p.gOutros)}` : ""}\nDesgaste do veículo: R$ ${fmt(p.wear)}${p.fixed ? `\nCustos fixos: R$ ${fmt(p.fixed)}` : ""}\nLucro real: R$ ${fmt(p.net)}${p.km ? `\nCusto por km: R$ ${fmt(p.cost / p.km)}` : ""}${p.hours ? `\nLucro por hora: R$ ${fmt(p.net / p.hours)}` : ""}`;
   if (p.list.length > 1 && p.list.length <= 31) t += "\n\nPor dia:\n" + p.list.map(d => `${brOf(d.iso).slice(0, 5)}: ${d.done} entregas · R$ ${fmt(d.earn)}${kml() ? ` · gas. R$ ${fmt(fuelOf(d.km))}` : ""}`).join("\n");
   return t;
 }
@@ -2331,6 +2461,8 @@ document.addEventListener("click", e => {
   if (d.act === "addmore") { st.ultimaAdicao = 0; save(); go("add"); }
   if (d.act === "cancelroute") cancelarRota(t);
   if (d.act === "desistir") desistirEComecar();
+  if (d.act === "gasto") gastoSheet();
+  if (d.gasto) gastoSheet((st.gastos || []).find(g => g.id === d.gasto));
   if (d.navset) { st.settings.nav = d.navset; st.navAsked = Date.now(); save(); renderNext(); toast("Navegação pelo " + ({ waze: "Waze", app: "DeliveRota" }[d.navset] || "Google Maps")); if (d.navset === "app" && rotaComecou() && !NV.on) iniciarNavApp(); }
   if (d.act === "navapp") { if (NV.on) { NV.solto = false; if (NV.eu && map) map.setView([NV.eu.lat, NV.eu.lng], 18); } else iniciarNavApp(); }
   if (d.junto) { const x = byId(d.junto), a = pending()[0]; if (x && a) { st.stops.splice(st.stops.indexOf(x), 1); st.stops.splice(st.stops.indexOf(a) + 1, 0, x); save(); renderAll(false); toast("Parada " + stopNumber(x) + " vem logo depois desta"); } }
@@ -2516,5 +2648,5 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
 })();
 
 // para testes automáticos
-window.DeliveRota = { acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
+window.DeliveRota = { lerNotinha, gastoSheet, periodData, acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
 })();
