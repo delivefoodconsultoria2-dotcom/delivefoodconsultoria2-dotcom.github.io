@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DeliveRota · App de rotas para entregadores</title>
+<meta name="description" content="Carregue a rota por planilha, PDF, foto, QR code ou WhatsApp. O DeliveRota otimiza sozinho pelas ruas e você começa a entregar. Baixe para Android e Windows.">
+<meta name="theme-color" content="#18A957">
+<link rel="icon" href="../icons/icon-192.png">
+<meta property="og:title" content="DeliveRota · App de rotas para entregadores">
+<meta property="og:description" content="Carregue a rota, o app otimiza sozinho e você começa a entregar.">
+<meta property="og:image" content="https://delivefoodconsultoria2-dotcom.github.io/baixar/img/2-rota-pronta.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--g:#18A957;--gs:#0E8A44;--gd:#0A5C2F;--soft:#E3F6EA;--ink:#10221A;--mut:#566A5F;--bg:#F4F8F5;--card:#fff;--line:#DCE6DF;--org:#F28C18;--disp:"Bricolage Grotesque",system-ui,sans-serif;--body:Manrope,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--soft:#12301F;--ink:#E6F1EA;--mut:#9DB2A5;--bg:#0B1510;--card:#14221A;--line:#26382D;--gs:#5BE08F;color-scheme:dark}}
+:root[data-theme="dark"]{--soft:#12301F;--ink:#E6F1EA;--mut:#9DB2A5;--bg:#0B1510;--card:#14221A;--line:#26382D;--gs:#5BE08F;color-scheme:dark}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:inherit}img{max-width:100%;display:block}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+header .wrap{display:flex;align-items:center;gap:12px;height:64px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-family:var(--disp);font-weight:800;font-size:21px}
+.brand img{width:36px;height:36px;border-radius:10px}
+header nav{margin-left:auto;display:flex;gap:6px;align-items:center}
+header nav a{text-decoration:none;font-weight:700;font-size:14.5px;padding:8px 12px;border-radius:10px;color:var(--mut)}
+header nav a.cta{background:var(--g);color:#fff}
+@media (max-width:640px){header nav a:not(.cta){display:none}}
+.hero{background:radial-gradient(120% 90% at 0% 0%,#24C46A 0%,var(--g) 38%,var(--gd) 100%);color:#fff;overflow:hidden}
+.hero .wrap{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;align-items:center;padding-top:56px;padding-bottom:0}
+.tag{display:inline-block;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);padding:6px 12px;border-radius:99px;font-weight:700;font-size:13.5px}
+.hero h1{font-family:var(--disp);font-size:clamp(34px,5.4vw,58px);line-height:1.04;margin:16px 0 14px;letter-spacing:-.02em}
+.hero p.lead{font-size:clamp(17px,2vw,20px);opacity:.95;margin:0 0 26px;max-width:540px}
+.dl{display:flex;flex-wrap:wrap;gap:12px}
+.btn{display:inline-flex;align-items:center;gap:10px;text-decoration:none;font-weight:800;border-radius:16px;padding:14px 20px;font-size:16px;line-height:1.15;border:0;cursor:pointer}
+.btn small{display:block;font-weight:600;font-size:12.5px;opacity:.8}
+.btn.white{background:#fff;color:var(--gd);box-shadow:0 14px 30px -12px rgba(0,0,0,.45)}
+.btn.glass{background:rgba(0,0,0,.18);color:#fff;border:1px solid rgba(255,255,255,.3)}
+.btn.green{background:var(--g);color:#fff}
+.btn svg{flex:none}
+.hero .alt{margin-top:16px;font-size:14.5px;opacity:.9}.hero .alt a{font-weight:700}
+.phone{justify-self:center;width:min(300px,78vw);border-radius:38px 38px 0 0;border:10px solid #0F1A14;border-bottom:0;overflow:hidden;box-shadow:0 30px 60px -20px rgba(0,0,0,.55);transform:translateY(8px)}
+@media (max-width:820px){.hero .wrap{grid-template-columns:1fr;padding-top:40px}.phone{width:min(270px,72vw)}}
+section{padding:72px 0}
+.kick{color:var(--gs);font-weight:800;font-size:13.5px;letter-spacing:.08em;text-transform:uppercase}
+h2{font-family:var(--disp);font-size:clamp(28px,3.6vw,40px);line-height:1.1;margin:8px 0 12px;letter-spacing:-.01em}
+.sub{color:var(--mut);font-size:17px;max-width:640px;margin:0 0 36px}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.step{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:20px;display:flex;flex-direction:column}
+.step .n{width:40px;height:40px;border-radius:12px;background:var(--g);color:#fff;display:grid;place-items:center;font-family:var(--disp);font-weight:800;font-size:20px}
+.step h3{font-size:20px;margin:14px 0 6px}.step p{color:var(--mut);margin:0 0 16px}
+.step img{border-radius:16px;border:1px solid var(--line);margin-top:auto;aspect-ratio:9/12;object-fit:cover;object-position:top}
+@media (max-width:820px){.steps{grid-template-columns:1fr}.step img{aspect-ratio:auto;max-height:420px;object-fit:cover}}
+.feat{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.f{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px}
+.f .ic{width:44px;height:44px;border-radius:12px;background:var(--soft);color:var(--gs);display:grid;place-items:center;margin-bottom:12px}
+.f h3{margin:0 0 6px;font-size:17.5px}.f p{margin:0;color:var(--mut);font-size:15px}
+@media (max-width:900px){.feat{grid-template-columns:1fr 1fr}}@media (max-width:560px){.feat{grid-template-columns:1fr}}
+.alt-bg{background:var(--card);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.plans{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.p{border:2px solid var(--line);border-radius:22px;padding:20px;background:var(--bg);position:relative}
+.p.best{border-color:var(--g);background:var(--soft)}
+.p .badge{position:absolute;top:-12px;left:20px;background:var(--g);color:#fff;font-weight:800;font-size:12px;padding:4px 10px;border-radius:99px}
+.p b{font-size:17px}.p .v{font-family:var(--disp);font-size:30px;font-weight:800;margin:8px 0 0}.p .m{color:var(--mut);font-size:14px}
+@media (max-width:900px){.plans{grid-template-columns:1fr 1fr}}
+.trial{margin-top:22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--soft);border-radius:18px;padding:16px 20px;font-weight:700}
+.inst{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.i{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:22px}
+.i h3{display:flex;align-items:center;gap:10px;margin:0 0 12px;font-size:19px}
+.i ol{margin:0 0 16px;padding-left:20px}.i li{margin:6px 0;color:var(--mut)}.i li b{color:var(--ink)}
+@media (max-width:900px){.inst{grid-template-columns:1fr}}
+details{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin-bottom:10px}
+summary{cursor:pointer;font-weight:800;font-size:16.5px;list-style:none;display:flex;justify-content:space-between;gap:10px}
+summary::after{content:"+";color:var(--gs);font-size:22px;line-height:1}details[open] summary::after{content:"–"}
+details p{color:var(--mut);margin:10px 0 0}
+.final{background:var(--gd);color:#fff;text-align:center;border-radius:28px;padding:44px 22px}
+.final h2{color:#fff}.final p{opacity:.9;margin:0 0 24px}.final .dl{justify-content:center}
+footer{padding:36px 0 50px;color:var(--mut);font-size:14px;text-align:center}
+footer a{font-weight:700;color:var(--gs)}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <a class="brand" href="#"><img src="../icons/icon-192.png" alt="">DeliveRota</a>
+  <nav><a href="#como">Como funciona</a><a href="#recursos">Recursos</a><a href="#planos">Planos</a><a href="#instalar">Instalar</a><a class="cta" href="#instalar">Baixar</a></nav>
+</div></header>
+
+<div class="hero"><div class="wrap">
+  <div>
+    <span class="tag">Feito em BH para entregadores autônomos</span>
+    <h1>Carregue a rota. O app otimiza. Você entrega.</h1>
+    <p class="lead">O DeliveRota monta a melhor ordem de entrega pelas ruas de verdade, junta pacotes de Mercado Livre, Shopee, Amazon, Correios, Loggi e iFood numa rota só e mostra quanto você lucrou no fim do dia.</p>
+    <div class="dl">
+      <a class="btn white" href="DeliveRota.apk" download><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 9.48l1.84-3.18a.38.38 0 00-.66-.38l-1.86 3.22a11.4 11.4 0 00-9.84 0L5.22 5.92a.38.38 0 00-.66.38L6.4 9.48A10.8 10.8 0 001 18h22a10.8 10.8 0 00-5.4-8.52zM7 15.25a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5zm10 0a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5z"/></svg><span>Baixar para Android<small>Arquivo .apk · 1,2 MB</small></span></a>
+      <a class="btn glass" href="DeliveRota-Instalador.exe" download><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5l7.5-1v7H3v-6zm8.5-1.1L21 3v8.5h-9.5V4.4zM3 12.5h7.5v7L3 18.5v-6zm8.5 0H21V21l-9.5-1.4v-7.1z"/></svg><span>Baixar para Windows<small>Instalador .exe</small></span></a>
+    </div>
+    <p class="alt">iPhone ou outro aparelho? <a href="../">Use direto no navegador</a> e adicione à tela inicial.</p>
+  </div>
+  <img class="phone" src="img/2-rota-pronta.webp" alt="Tela do DeliveRota com a rota pronta: 16 paradas, rota principal em verde e rota 2 em laranja" width="540" height="960">
+</div></div>
+
+<section id="como"><div class="wrap">
+  <span class="kick">Como funciona</span>
+  <h2>Três toques e você está na rua</h2>
+  <p class="sub">Nada de digitar endereço por endereço nem montar a ordem na mão.</p>
+  <div class="steps">
+    <div class="step"><span class="n">1</span><h3>Carregar rota</h3><p>Planilha, PDF, foto da etiqueta, QR code, lista do WhatsApp, áudio ou digitando. O app acha os endereços e escreve tudo certinho.</p><img src="img/4-adicionar.webp" alt="Formas de carregar a rota" loading="lazy" width="540" height="960"></div>
+    <div class="step"><span class="n">2</span><h3>Otimiza sozinho</h3><p>A melhor ordem pelo tempo real das ruas, com mão única e retornos. Pegou pacote de outro app? Adicione e tudo é reotimizado junto, em outra cor.</p><img src="img/2-rota-pronta.webp" alt="Rota pronta e otimizada" loading="lazy" width="540" height="960"></div>
+    <div class="step"><span class="n">3</span><h3>Começar rota</h3><p>Um toque e o Waze ou o Google Maps abre na primeira entrega. Marque entregue com foto e GPS e siga para a próxima.</p><img src="img/3-proxima-entrega.webp" alt="Próxima entrega com botão de navegar" loading="lazy" width="540" height="960"></div>
+  </div>
+</div></section>
+
+<section id="recursos" class="alt-bg"><div class="wrap">
+  <span class="kick">Recursos</span>
+  <h2>Tudo que o entregador precisa num app só</h2>
+  <p class="sub">Pensado para quem roda o dia inteiro de moto ou de carro.</p>
+  <div class="feat">
+    <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3"/><path d="M8 8h3v3H8zM13 13h3v3h-3z"/></svg></div><h3>8 jeitos de carregar</h3><p>QR code em modo contínuo, foto, planilha, PDF, texto, voz, áudio do WhatsApp ou tocando no mapa.</p></div>
+    <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/><path d="M9.5 9.5l5 5"/></svg></div><h3>Várias plataformas, uma rota</h3><p>Pacotes de outro aplicativo entram em outra cor e o app otimiza tudo junto.</p></div>
+    <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></div><h3>Rápido de verdade</h3><p>100 paradas organizadas em segundos, sem limite de endereços. Rota repetida carrega na hora.</p></div>
+    <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></div><h3>Mãos livres</h3><p>"Entreguei", "ninguém em casa", "qual a próxima", "quanto ganhei". O app fala a próxima entrega.</p></div>
+    <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></div><h3>Lucro real</h3><p>Desconta gasolina, desgaste e custos fixos. Lucro por dia, por hora e por km, e qual plataforma paga melhor.</p></div>
+    <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><h3>Segurança</h3><p>Botão SOS manda sua localização ao contato de confiança e liga para 190, 192 ou 193.</p></div>
+    <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></div><h3>Comprovante de entrega</h3><p>PDF com horário, GPS e foto, para contestar quando o cliente diz que não recebeu.</p></div>
+    <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 3H6a1 1 0 00-1 1v16a1 1 0 001 1h12a1 1 0 001-1V8z"/><path d="M14 3v5h5M8 13h8M8 17h5"/></svg></div><h3>MEI e Imposto de Renda</h3><p>Relatório anual mês a mês, meta do dia, calendário e controle de manutenção do veículo.</p></div>
+    <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12.5l4 4L19 7"/></svg></div><h3>Funciona na rua</h3><p>Com a rota carregada, entregas, fotos e ganhos ficam no seu celular, mesmo com o sinal fraco.</p></div>
+  </div>
+</div></section>
+
+<section id="planos"><div class="wrap">
+  <span class="kick">Planos</span>
+  <h2>Comece com 15 dias grátis</h2>
+  <p class="sub">Tudo liberado no teste. Depois, escolha o plano que cabe no seu bolso. Quanto mais longo, mais barato por mês.</p>
+  <div class="plans">
+    <div class="p"><b>Mensal</b><div class="v">R$ 44,90</div><div class="m">por mês</div></div>
+    <div class="p"><b>Trimestral</b><div class="v">R$ 39,97</div><div class="m">por mês · R$ 119,90 a cada 3 meses</div></div>
+    <div class="p"><b>Semestral</b><div class="v">R$ 34,98</div><div class="m">por mês · R$ 209,90 a cada 6 meses</div></div>
+    <div class="p best"><span class="badge">Mais econômico</span><b>Anual</b><div class="v">R$ 29,99</div><div class="m">por mês · R$ 359,90 por ano</div></div>
+  </div>
+  <div class="trial"><span>Pagamento por Pix, cartão ou boleto. Sem fidelidade: cancele quando quiser.</span><a class="btn green" href="#instalar" style="margin-left:auto">Baixar e testar grátis</a></div>
+</div></section>
+
+<section id="instalar" class="alt-bg"><div class="wrap">
+  <span class="kick">Instalar</span>
+  <h2>Escolha o seu aparelho</h2>
+  <p class="sub">Leva menos de um minuto. Depois de instalado, o app se atualiza sozinho.</p>
+  <div class="inst">
+    <div class="i"><h3><svg width="24" height="24" viewBox="0 0 24 24" fill="var(--g)"><path d="M17.6 9.48l1.84-3.18a.38.38 0 00-.66-.38l-1.86 3.22a11.4 11.4 0 00-9.84 0L5.22 5.92a.38.38 0 00-.66.38L6.4 9.48A10.8 10.8 0 001 18h22a10.8 10.8 0 00-5.4-8.52zM7 15.25a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5zm10 0a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5z"/></svg>Android</h3>
+      <ol><li>Toque em <b>Baixar para Android</b>.</li><li>Abra o arquivo baixado.</li><li>Se pedir, ative <b>Permitir desta fonte</b> e volte.</li><li>Toque em <b>Instalar</b> e depois em <b>Abrir</b>.</li></ol>
+      <a class="btn green" href="DeliveRota.apk" download>Baixar para Android</a></div>
+    <div class="i"><h3><svg width="22" height="22" viewBox="0 0 24 24" fill="var(--g)"><path d="M3 5.5l7.5-1v7H3v-6zm8.5-1.1L21 3v8.5h-9.5V4.4zM3 12.5h7.5v7L3 18.5v-6zm8.5 0H21V21l-9.5-1.4v-7.1z"/></svg>Windows</h3>
+      <ol><li>Toque em <b>Baixar para Windows</b> e abra o arquivo.</li><li>Se aparecer "O Windows protegeu o computador": <b>Mais informações</b> e <b>Executar assim mesmo</b>.</li><li><b>Instalar</b> e <b>Concluir</b>. O ícone fica na área de trabalho.</li></ol>
+      <a class="btn green" href="DeliveRota-Instalador.exe" download>Baixar para Windows</a></div>
+    <div class="i"><h3><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--g)" stroke-width="2.2"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>iPhone</h3>
+      <ol><li>Abra <b>o app no navegador</b> pelo Safari.</li><li>Toque em <b>Compartilhar</b> (o quadrado com a seta).</li><li>Escolha <b>Adicionar à Tela de Início</b>.</li></ol>
+      <a class="btn green" href="../">Abrir no navegador</a></div>
+  </div>
+</div></section>
+
+<section id="duvidas"><div class="wrap">
+  <span class="kick">Dúvidas</span>
+  <h2>Perguntas frequentes</h2>
+  <details><summary>Precisa de internet?</summary><p>Para carregar a rota e ver o mapa, sim. Depois que a rota está pronta, marcar entregas, fotos e ganhos funcionam no celular mesmo com o sinal fraco. Dica: carregue a rota antes de sair, no Wi-Fi.</p></details>
+  <details><summary>Funciona com quais plataformas?</summary><p>Com qualquer uma: Mercado Livre, Shopee, Amazon, Correios, Loggi, iFood e outras. Cada lote que você adiciona depois aparece numa cor diferente na mesma rota.</p></details>
+  <details><summary>Tem limite de paradas?</summary><p>Não. O app organiza 100 paradas em segundos e aceita mais se precisar.</p></details>
+  <details><summary>Puxei a rota errada. E agora?</summary><p>Toque em Cancelar rota (dois toques para confirmar) e carregue outra. No meio da rota, ele tira só as entregas que faltam e mantém as já feitas no seu ganho do dia.</p></details>
+  <details><summary>Meus dados ficam seguros?</summary><p>Suas entregas, fotos e ganhos ficam guardados no seu próprio aparelho. O nome e o e-mail da conta servem só para o login. Veja a <a href="../politica-de-privacidade.html">política de privacidade</a>.</p></details>
+  <details><summary>Funciona fora de Belo Horizonte?</summary><p>Sim. O app começa configurado para BH e Grande BH, mas você troca a cidade em Configurações.</p></details>
+</div></section>
+
+<section style="padding-top:0"><div class="wrap">
+  <div class="final"><h2>Sua rota, seu ganho, no seu bolso.</h2><p>Baixe agora e teste 15 dias grátis.</p>
+    <div class="dl"><a class="btn white" href="DeliveRota.apk" download>Baixar para Android</a><a class="btn glass" href="DeliveRota-Instalador.exe" download>Baixar para Windows</a></div></div>
+</div></section>
+
+<footer><div class="wrap">
+  DeliveRota é um produto da <b>DeliveFood Consultoria</b> · CNPJ 57.395.520/0001-68 · Belo Horizonte/MG<br>
+  Suporte: <a href="https://wa.me/5531995693829">WhatsApp (31) 99569-3829</a> · <a href="mailto:delivefoodconsultoria@gmail.com">delivefoodconsultoria@gmail.com</a> · <a href="../politica-de-privacidade.html">Privacidade</a>
+</div></footer>
+</body>
+</html>
