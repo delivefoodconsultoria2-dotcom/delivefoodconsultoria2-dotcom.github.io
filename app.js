@@ -47,7 +47,7 @@ async function dbDel(store, key) { try { const d = await idb(); await new Promis
 /* ===================== estado ===================== */
 const DEFAULTS = {
   stops: [], start: null, history: [], filter: "all",
-  settings: { city: "Belo Horizonte - MG", rate: 3.5, vehicle: "moto", stopMin: 3, nav: "waze", roundTrip: false, theme: "system",
+  settings: { city: "Belo Horizonte - MG", rate: 3.5, vehicle: "moto", stopMin: 3, nav: "google", roundTrip: false, theme: "system",
     speak: true, kml: 0, fuelPrice: 6.19, autoRep: "none", repWa: "", repMail: "", msg: "Olá {nome}! Sou o entregador do seu pedido e chego em cerca de {min} minutos." }
 };
 let st = JSON.parse(JSON.stringify(DEFAULTS));
@@ -495,8 +495,16 @@ function renderStats() {
   $("#stDone").textContent = total - p.length; $("#stTotal").textContent = total;
   $("#ringFg").setAttribute("stroke-dasharray", `${total ? (total - p.length) / total * 100 : 0} 100`);
 }
-function navLinks(s) {
+function navLinks(s, comProximas) {
   const dest = hasGeo(s) ? `${s.lat},${s.lng}` : encodeURIComponent(addrFull(s));
+  if (comProximas) {
+    const p = pending(), i = p.indexOf(s), seq = i >= 0 ? p.slice(i, i + 8) : [s];
+    if (seq.length > 1) {
+      const enc = x => hasGeo(x) ? `${x.lat},${x.lng}` : encodeURIComponent(addrFull(x));
+      const gm = `https://www.google.com/maps/dir/?api=1&destination=${enc(seq[seq.length - 1])}&waypoints=${seq.slice(0, -1).map(enc).join("%7C")}&travelmode=driving`;
+      return { ...navLinks(s), gmapsMulti: gm, multiN: seq.length };
+    }
+  }
   return {
     waze: hasGeo(s) ? `https://waze.com/ul?ll=${s.lat},${s.lng}&navigate=yes` : `https://waze.com/ul?q=${dest}&navigate=yes`,
     gmaps: `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=driving`
@@ -504,12 +512,14 @@ function navLinks(s) {
 }
 function renderNext() {
   const box = $("#nextBox"), p = pending();
+  document.body.classList.remove("pronta", "inicio");
   if (!st.stops.length) {
     if (st.started) { st.started = false; save(); }
+    document.body.classList.add("inicio");
     box.innerHTML = `<div class="cta-box">
       <h3>Rota de hoje</h3><p>Bipe os pacotes, mande a foto da etiqueta, a planilha ou a lista do WhatsApp.</p>
       <button class="btn primary cta" data-go="add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>CARREGAR ROTA</button>
-      <button class="link-btn" data-act="sample">Testar com uma rota de exemplo</button></div>`;
+      <div class="cta-links"><button class="link-btn" data-act="sample">Testar com uma rota de exemplo</button><button class="link-btn" data-act="help">Tirar dúvidas</button></div></div>`;
     return;
   }
   if (!p.length) {
@@ -526,19 +536,21 @@ function renderNext() {
     const legenda = grupos.length > 1 ? `<div class="legenda">${grupos.map(g => `<span class="lg${g ? " g" + (((g - 1) % 4) + 1) : ""}"><i></i>${g ? "Rota " + (g + 1) : "Principal"}: ${p.filter(x => (x.grupo || 0) === g).length}</span>`).join("")}</div>` : "";
     const esperando = busy && st.queroComecar;
     box.innerHTML = `<div class="cta-box ready">
-      <div class="ready-top"><div class="ready-n"><em>${busy ? "Organizando a rota" : "Rota pronta"}</em><b>${p.length}</b><span>parada${p.length > 1 ? "s" : ""}${km ? ` · ${km1(km)} km` : ""}${busy ? "" : ` · fim ~${fim}`}</span></div>
-        <span class="ready-st${busy ? " busy" : ""}">${busy ? `<i class="spin"></i>Achando ${busy} no mapa` : (grupos.length > 1 ? "✓ Tudo junto e otimizado" : "✓ Otimizada na melhor ordem")}</span></div>
+      <button class="xclose" data-act="cancelroute" aria-label="Cancelar rota" title="Cancelar rota">✕</button>
+      <div class="ready-line"><span class="ready-tit">${busy ? "Organizando a rota" : "Rota pronta"}</span><span class="ready-num"><b>${p.length}</b> parada${p.length > 1 ? "s" : ""}${km ? ` · ${km1(km)} km` : ""}${busy ? "" : ` · fim ~${fim}`}</span></div>
+      <span class="ready-st${busy ? " busy" : ""}">${busy ? `<i class="spin"></i>Achando ${busy} no mapa` : (grupos.length > 1 ? "✓ Tudo junto e otimizado" : "✓ Otimizada na melhor ordem")}</span>
       ${legenda}
       <button class="btn primary cta" data-act="start" ${esperando ? "disabled" : ""}><svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>${esperando ? "COMEÇANDO..." : "COMEÇAR ROTA"}</button>
       ${esperando ? `<p class="ok-txt">Começa sozinho assim que achar os ${busy} endereço(s) que faltam.</p>` : semMapa ? `<p class="ok-txt">${semMapa} endereço(s) sem local no mapa ficam no fim.</p>` : ""}
-      <div class="pergunta">Gostaria de adicionar outros endereços?</div>
-      <div class="cta-duo"><button class="btn dark" data-act="addmore"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Sim, adicionar</button>
-        <button class="btn warn" data-act="cancelroute">Cancelar rota</button></div>
+      <button class="btn dark addmore" data-act="addmore"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Adicionar mais endereços</button>
       <button class="link-btn" data-go="paradas">Ver a lista de paradas</button></div>`;
+    document.body.classList.add("pronta");
     return;
   }
-  const s = p[0], L2 = navLinks(s), grp = sameBuildingCount(s), dist = hav(lastPoint(), s);
-  const prefer = st.settings.nav === "google" ? ["gmaps", "Google Maps", "waze", "Waze"] : ["waze", "Waze", "gmaps", "Google Maps"];
+  const s = p[0], L2 = navLinks(s, true), grp = sameBuildingCount(s), dist = hav(lastPoint(), s);
+  if (L2.gmapsMulti) L2.gmaps = L2.gmapsMulti;
+  const prefer = st.settings.nav !== "waze" ? ["gmaps", "Google Maps", "waze", "Waze"] : ["waze", "Waze", "gmaps", "Google Maps"];
+  const perto = hasGeo(s) ? p.slice(2).filter(x => hasGeo(x) && hav(s, x) < 0.4).slice(0, 3) : [];
   const mins = dist ? Math.max(1, Math.round(dist / SPEED[st.settings.vehicle] * 60)) : 0;
   const I = {
     nav: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M3 11 21 3l-8 18-2-8z"/></svg>',
@@ -552,6 +564,7 @@ function renderNext() {
     <div class="next-top"><span class="next-num${gCls(s)}">${stopNumber(s)}</span>
       <div class="next-lbl"><span>Próxima entrega</span><em>${dist ? km1(dist) + " km · ~" + mins + " min" : "Toque em navegar para ir"}${p.length > 1 ? " · depois mais " + (p.length - 1) : ""}</em></div></div>
     <div class="addr">${esc(addrLine(s))}</div>
+    ${perto.length ? `<div class="perto"><b>Pertinho desta entrega</b>${perto.map(x => `<div class="perto-row"><span class="badge${gCls(x)}">${stopNumber(x)}</span><span class="perto-t">${esc(addrLine(x))}<em>${Math.round(hav(s, x) * 1000)} m</em></span><button class="btn ghost sm" data-junto="${x.id}">Fazer junto</button></div>`).join("")}</div>` : ""}
     <div class="sub">${esc([s.comp || "Sem complemento", s.bairro, s.client].filter(Boolean).join(" · "))}</div>
     <div class="facts">
       ${gTag(s)}<span class="fact">${s.pk} ${s.pk > 1 ? "pacotes" : "pacote"}</span>
@@ -564,7 +577,8 @@ function renderNext() {
     ${addrNote(s) ? `<div class="note warnnote">${I.info}<span><b>Você anotou neste endereço:</b> ${esc(addrNote(s))}</span></div>` : ""}
     ${s.ref ? `<div class="note">${I.info}<span><b>Referência:</b> ${esc(s.ref)}</span></div>` : ""}
     <div class="stack">
-      <div class="actions"><a class="btn dark" href="${L2[prefer[0]]}" target="_blank" rel="noopener">${I.nav}Navegar no ${prefer[1]}</a>
+      <div class="navsw" role="group" aria-label="App de navegação"><span>Navegar pelo</span><button data-navset="google" aria-pressed="${st.settings.nav !== "waze"}">Google Maps</button><button data-navset="waze" aria-pressed="${st.settings.nav === "waze"}">Waze</button></div>
+      <div class="actions"><a class="btn dark" href="${L2[prefer[0]]}" target="_blank" rel="noopener">${I.nav}<span class="navlbl">Navegar no ${prefer[1]}${prefer[0] === "gmaps" && L2.multiN > 1 ? `<small>com as próximas ${L2.multiN} paradas no caminho</small>` : ""}</span></a>
         <a class="btn ghost icon" href="${L2[prefer[2]]}" target="_blank" rel="noopener" title="Abrir no ${prefer[3]}" aria-label="Abrir no ${prefer[3]}">${I.alt}</a>
         <button class="btn ghost icon" data-contact="${s.id}" title="Ligar ou mandar WhatsApp" aria-label="Contato do cliente">${I.phone}</button></div>
       <button class="btn primary big" data-deliver="${s.id}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 4.5 4.5L19 7"/></svg>Entregue</button>
@@ -591,6 +605,7 @@ function autoOtimizar() {
 }
 function comecarRota({ abrirNav = true } = {}) {
   const p = pending(); if (!p.length) return;
+  if (abrirNav && precisaPerguntarNav()) { navSheet(() => comecarRota()); return; }
   // ainda achando endereço no mapa: começa sozinho quando terminar
   if (p.some(x => x.geo === "busy")) { st.queroComecar = true; save(); go("rota"); renderNext(); toast("Terminando de achar os endereços. A rota começa sozinha."); return; }
   st.queroComecar = false;
@@ -600,7 +615,7 @@ function comecarRota({ abrirNav = true } = {}) {
   toast("Rota começou. Boa entrega!");
   if (st.settings.speak) try { speak("Rota começou. Primeira entrega: " + s.street + ", " + spokenNum(s.num || "sem número") + "."); } catch (e) {}
   if (!abrirNav) return; // sem toque do entregador o celular bloqueia abrir o Waze; ele toca em Navegar
-  const L2 = navLinks(s); const url = st.settings.nav === "google" ? L2.gmaps : L2.waze;
+  const L2 = navLinks(s, true); const url = st.settings.nav === "waze" ? L2.waze : (L2.gmapsMulti || L2.gmaps);
   setTimeout(() => window.open(url, "_blank", "noopener"), 600);
 }
 /* desistir de adicionar: volta, otimiza tudo e começa */
@@ -610,7 +625,8 @@ function desistirEComecar() {
 }
 function cancelarRota(btn) {
   const feitas = st.stops.filter(s => s.status !== "pending").length;
-  twoTap(btn, feitas ? "Toque de novo: tira as pendentes" : "Toque de novo para cancelar", () => {
+  const curto = btn.classList.contains("xclose");
+  twoTap(btn, curto ? "Cancelar? Toque de novo" : feitas ? "Toque de novo: tira as pendentes" : "Toque de novo para cancelar", () => {
     st.stops = st.stops.filter(s => s.status !== "pending");
     st.queroComecar = false;
     if (!st.stops.length) { st.started = false; st.otimizada = false; st.ultimaAdicao = 0; }
@@ -672,8 +688,9 @@ function renderAddBar() {
   const p = pending();
   if (!p.length || rotaComecou() || importList.length) { bar.hidden = true; bar.innerHTML = ""; return; }
   bar.hidden = false;
-  bar.innerHTML = `<div><b>Sua rota tem ${p.length} parada${p.length > 1 ? "s" : ""}</b><span>Os novos entram em outra cor. Desistiu de adicionar?</span></div>
-    <button class="btn primary" data-act="desistir"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>Desistir e COMEÇAR ROTA</button>`;
+  bar.innerHTML = `<div><b>Sua rota tem ${p.length} parada${p.length > 1 ? "s" : ""}</b><span>Terminou de adicionar? É só começar.</span></div>
+    <div class="addbar-bt"><button class="btn primary" data-act="desistir"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>COMEÇAR ROTA</button>
+    <button class="xclose static" data-act="cancelroute" aria-label="Cancelar rota" title="Cancelar rota">✕</button></div>`;
 }
 function go(name) {
   document.body.dataset.tab = name;
@@ -918,24 +935,33 @@ function showImport(list, source) {
   const box = $("#importBox");
   if (!importList.length) { box.innerHTML = `<div class="imp"><h4>Nenhum endereço encontrado</h4><p class="sub">Confira se o texto tem rua e número. Você também pode digitar o endereço.</p></div>`; return; }
   const temRota = pending().length > 0;
+  const PLAY = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>';
+  const MAIS = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
   box.innerHTML = `<div class="imp"><div class="imp-top">
-      <div class="imp-h"><h4>${importList.length} endereço(s) encontrados</h4><span class="hint">Desmarque o que não for entrega.</span></div>
-      <button class="btn primary big" id="impGo" data-act="impgo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 4.5 4.5L19 7"/></svg>${temRota ? "Juntar na rota e otimizar" : "Pronto, montar a rota"}</button>
-      <button class="link-btn" data-act="${temRota ? "desistir" : "impcancel"}">${temRota ? "Desistir destes e começar a rota" : "Cancelar"}</button></div>
+      <button class="xclose" data-act="impcancel" aria-label="Cancelar" title="Cancelar estes endereços">✕</button>
+      <div class="imp-h"><h4>${importList.length} endereço${importList.length > 1 ? "s" : ""} encontrado${importList.length > 1 ? "s" : ""}</h4><span class="hint">${temRota ? "Entram na rota que você já tem, em outra cor." : "Desmarque o que não for entrega."}</span></div>
+      <button class="btn primary cta" id="impStart" data-act="impstart">${PLAY}COMEÇAR ROTA</button>
+      <button class="btn dark addmore" id="impGo" data-act="impgo">${MAIS}Adicionar mais endereços</button></div>
     ${importList.map((a, i) => `<label class="imp-row"><input type="checkbox" data-imp="${i}" checked><div><b>${esc(addrLine(a) || a.raw || "Endereço sem rua")}</b><br><span class="sub">${esc([a.comp, a.bairro, a.city, a.cep, a.client, a.code].filter(Boolean).join(" · ") || "")}</span></div></label>`).join("")}
-    <button class="btn primary big" data-act="impgo" style="margin-top:10px">${temRota ? "Juntar na rota e otimizar" : "Pronto, montar a rota"}</button></div>`;
+    <button class="btn primary cta" data-act="impstart" style="margin-top:12px;width:100%">${PLAY}COMEÇAR ROTA</button></div>`;
   renderAddBar();
   box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
-function confirmImport() {
+function confirmImport({ fica = false } = {}) {
   const list = importList.filter(a => a.ok);
-  if (!list.length) return;
+  if (!list.length) { toast("Marque pelo menos um endereço"); return false; }
   const exist = new Set(st.stops.map(s => (s.street + "|" + s.num + "|" + s.comp).toLowerCase()));
   const fresh = list.filter(a => !exist.has((a.street + "|" + a.num + "|" + a.comp).toLowerCase()));
   addStops(fresh);
   $("#importBox").innerHTML = ""; importList = []; ["#docStatus", "#ocrStatus"].forEach(q => { const x = $(q); if (x) x.hidden = true; }); renderAddBar();
-  toast(`${fresh.length} parada(s) adicionadas${list.length - fresh.length ? ` (${list.length - fresh.length} repetidas ignoradas)` : ""}. Localizando no mapa...`, 4000);
+  if (fica) {
+    toast(`${fresh.length} parada(s) na rota. Adicione mais ou toque em COMEÇAR ROTA.`, 3500);
+    ["#docStatus", "#ocrStatus"].forEach(q => { const x = $(q); if (x) x.hidden = true; });
+    renderAddBar(); $(".panel").scrollTop = 0; return true;
+  }
+  toast(`${fresh.length} parada(s) adicionadas${list.length - fresh.length ? ` (${list.length - fresh.length} repetidas ignoradas)` : ""}.`, 3000);
   go("rota");
+  return true;
 }
 
 /* ===================== entrada: foto / print (OCR) ===================== */
@@ -1138,10 +1164,28 @@ function onboardSheet() {
       if (pick === "bh" && map) map.setView(REGION.center, REGION.zoom); else centerOnCity();
       if (wantGps) useGps(false);
       toast("Pronto! Região: " + (pick === "bh" ? "Belo Horizonte e Grande BH" : st.settings.city));
+      if (!st.navAsked) setTimeout(() => navSheet(), 350);
     });
   });
 }
 
+/* ===================== app de navegação: Google Maps (padrão) ou Waze ===================== */
+const NAV_ICON = { google: '<svg width="26" height="26" viewBox="0 0 24 24"><path fill="#34A853" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg>',
+  waze: '<svg width="26" height="26" viewBox="0 0 24 24"><circle cx="12" cy="11" r="8.5" fill="#33CCFF"/><circle cx="9.3" cy="10" r="1.2" fill="#0B1A2A"/><circle cx="14.7" cy="10" r="1.2" fill="#0B1A2A"/><path d="M8.8 13.3c1.8 1.6 4.6 1.6 6.4 0" stroke="#0B1A2A" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>' };
+function precisaPerguntarNav() { return !st.navAsked || Date.now() - st.navAsked > 604800000; }
+function navSheet(depois) {
+  sheet(`<h3>Qual app você usa para navegar?</h3><p class="sub">O DeliveRota abre a entrega direto nele. Dá para trocar a qualquer hora no cartão da entrega.</p>
+    <div class="navpick">
+      <button data-navpick="google" aria-pressed="${st.settings.nav !== "waze"}">${NAV_ICON.google}<span><b>Google Maps</b><em>Recomendado · mostra as próximas paradas no caminho</em></span></button>
+      <button data-navpick="waze" aria-pressed="${st.settings.nav === "waze"}">${NAV_ICON.waze}<span><b>Waze</b><em>Uma parada por vez</em></span></button>
+    </div>`, bg => {
+    bg.querySelectorAll("[data-navpick]").forEach(b => b.addEventListener("click", () => {
+      st.settings.nav = b.dataset.navpick; st.navAsked = Date.now(); save(); closeSheet(); renderNext();
+      toast("Navegação pelo " + (st.settings.nav === "waze" ? "Waze" : "Google Maps"));
+      if (depois) depois();
+    }));
+  });
+}
 /* ===================== exemplo ===================== */
 function loadSample() {
   const S = [
@@ -2082,7 +2126,10 @@ document.addEventListener("click", e => {
   if (d.act === "addmore") { st.ultimaAdicao = 0; save(); go("add"); }
   if (d.act === "cancelroute") cancelarRota(t);
   if (d.act === "desistir") desistirEComecar();
-  if (d.act === "impgo") confirmImport();
+  if (d.navset) { st.settings.nav = d.navset; st.navAsked = Date.now(); save(); renderNext(); toast("Navegação pelo " + (d.navset === "waze" ? "Waze" : "Google Maps")); }
+  if (d.junto) { const x = byId(d.junto), a = pending()[0]; if (x && a) { st.stops.splice(st.stops.indexOf(x), 1); st.stops.splice(st.stops.indexOf(a) + 1, 0, x); save(); renderAll(false); toast("Parada " + stopNumber(x) + " vem logo depois desta"); } }
+  if (d.act === "impgo") confirmImport({ fica: true });
+  if (d.act === "impstart") { if (confirmImport({ fica: true })) comecarRota(); }
   if (d.act === "impnone") { importList.forEach(a => a.ok = false); $$("[data-imp]").forEach(c => c.checked = false); }
   if (d.act === "impcancel") { $("#importBox").innerHTML = ""; importList = []; $$(".pane .status, #docStatus, #ocrStatus").forEach(x => x.hidden = true); renderAddBar(); }
   if (d.act === "newroute") { st.queroComecar = false; st.stops = []; st.started = false; st.otimizada = false; save(); renderAll(true); go("add"); }
@@ -2251,6 +2298,7 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
   $("#today").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }).replace(/^./, c => c.toUpperCase());
   initMap(); renderAll(true);
   if (!st.onboarded) { if (st.settings.city && (st.stops.length || st.history.length)) st.onboarded = true; else setTimeout(onboardSheet, 300); }
+  if (st.onboarded && !st.navAsked) setTimeout(() => { if (!$("#sheetHost").innerHTML) navSheet(); }, 500);
   if (!st.settings.city) st.settings.city = "Belo Horizonte - MG";
   if (map && st.cityCenter && !st.stops.some(hasGeo) && !st.start) map.setView([st.cityCenter.lat, st.cityCenter.lng], 13);
   st.stops.filter(s => !hasGeo(s) && s.geo !== "fail").forEach(queueGeocode);

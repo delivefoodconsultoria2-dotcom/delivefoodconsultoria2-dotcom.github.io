@@ -511,3 +511,53 @@ h2.sec{font-size:24px}
 .imp-top .link-btn{margin:0}
 .ready-top .ready-n{align-items:flex-start}.ready-top .ready-n b{font-size:40px}
 .ready-top .ready-n em{font-style:normal;font-weight:800;font-size:14px;color:var(--ink);margin-bottom:2px}
+
+/* rota pronta: tudo à vista, sem rolar */
+.cta-box.ready{position:relative;padding:16px 14px 6px;text-align:left}
+.xclose{position:absolute;top:10px;right:10px;min-width:40px;height:40px;padding:0 12px;border-radius:99px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:18px;font-weight:800;cursor:pointer;line-height:1;z-index:2}
+.xclose[data-armed]{background:#FDECEC;color:#C62828;border-color:#F5B5B5;font-size:13px}
+.ready-line{display:flex;flex-direction:column;gap:2px;padding-right:56px}
+.ready-tit{font-family:var(--display);font-weight:800;font-size:15px;color:var(--muted)}
+.ready-num{font-size:15px;color:var(--muted);font-weight:700}
+.ready-num b{font-family:var(--display);font-size:30px;color:var(--green-strong);line-height:1}
+.cta-box.ready .ready-st{margin:8px 0 10px}
+.cta-box.ready .legenda{margin:0 0 10px}
+.cta-box.ready .btn.cta{min-height:70px;font-size:21px}
+.cta-box.ready .ok-txt{margin:8px 0 0;font-size:13.5px}
+.cta-box.ready .addmore{width:100%;min-height:54px;margin-top:10px;border-radius:16px;font-size:16px;gap:8px}
+.cta-box.ready .link-btn{display:block;margin:2px auto 0;padding:10px 8px 6px}
+@media (max-width:899px){
+  body.pronta .mapcol{height:24vh}
+  body.pronta .helpfab{display:none}
+}
+@media (max-width:899px){ body.inicio .mapcol{height:24vh} }
+@media (max-width:899px) and (max-height:700px){ body.inicio .helpfab{bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:scale(.88);transform-origin:bottom right} }
+.cta-links{display:flex;justify-content:center;flex-wrap:wrap;gap:4px 18px}
+@media (max-width:899px){ body.inicio .helpfab{display:none} }
+/* leitura da rota: X, COMEÇAR e Adicionar mais logo no topo */
+.imp-top .imp-h{padding-right:52px}
+.imp-top .btn.cta{width:100%;min-height:64px;font-size:20px;letter-spacing:.03em}
+.imp-top .addmore{width:100%;min-height:50px;border-radius:16px;font-size:16px;gap:8px}
+.imp-top .xclose{top:10px;right:10px}
+.xclose.static{position:static;flex:none}
+.addbar-bt{display:flex;gap:8px;align-items:center;flex:none}
+@media (max-width:420px){.addbar-bt .btn{flex:1}}
+@media (max-width:899px){ body.pronta .mapcol, body.inicio .mapcol{min-height:120px} }
+@media (max-width:899px) and (max-height:700px){ body.pronta .mapcol{height:20vh} .cta-box.ready .ready-st{margin:6px 0 8px} .cta-box.ready .btn.cta{min-height:62px} }
+/* escolha do app de navegação */
+.navpick{display:grid;gap:10px;margin-top:14px}
+.navpick button{display:flex;align-items:center;gap:14px;text-align:left;padding:16px;border-radius:18px;border:2px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;cursor:pointer}
+.navpick button[aria-pressed="true"]{border-color:var(--green);background:var(--green-soft,#E6F6EC)}
+.navpick b{display:block;font-size:18px}
+.navpick em{display:block;font-style:normal;color:var(--muted);font-size:13.5px;margin-top:2px}
+.navsw{display:flex;align-items:center;gap:6px;margin:12px 0 8px;font-size:13px;color:var(--muted);font-weight:700}
+.navsw button{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:99px;padding:6px 12px;font:inherit;font-weight:800;font-size:13px;cursor:pointer}
+.navsw button[aria-pressed="true"]{background:var(--green);border-color:var(--green);color:#fff}
+.navlbl{display:flex;flex-direction:column;align-items:flex-start;line-height:1.15}
+.navlbl small{font-size:11.5px;font-weight:600;opacity:.8}
+.perto{margin:10px 0 4px;padding:10px 12px;border-radius:14px;background:var(--surface-2);border:1px dashed var(--line);font-size:14px}
+.perto>b{display:block;margin-bottom:6px;font-size:13px;color:var(--green-strong)}
+.perto-row{display:flex;align-items:center;gap:10px;padding:4px 0}
+.perto-t{flex:1;min-width:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.perto-t em{font-style:normal;color:var(--muted);font-weight:600;margin-left:6px}
+.perto .btn.sm{min-height:34px;padding:0 12px;font-size:13px;flex:none}
