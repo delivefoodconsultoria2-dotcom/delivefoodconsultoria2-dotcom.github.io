@@ -482,3 +482,32 @@ h2.sec{font-size:24px}
 .ok-txt{color:var(--green-strong)!important;font-weight:700}
 .cta-par .cta span{display:flex;flex-direction:column;line-height:1.15;align-items:flex-start;font-size:13px;font-weight:700}
 .cta-par .cta span b{font-size:19px;letter-spacing:.03em}
+
+/* rota pronta: COMEÇAR no topo */
+.ready-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;text-align:left}
+.ready-top .ready-n{margin:0}
+.ready-st{flex:none;font-size:13px;font-weight:800;color:var(--green-strong,#0E8A44);background:var(--green-soft,#E6F6EC);padding:7px 12px;border-radius:99px;display:inline-flex;align-items:center;gap:6px}
+.ready-st.busy{color:var(--ink);background:var(--surface)}
+.spin{width:12px;height:12px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:gira .8s linear infinite;display:inline-block}
+@keyframes gira{to{transform:rotate(360deg)}}
+.cta-box.ready .legenda{margin:-4px 0 12px}
+.cta-box.ready .ok-txt{margin:10px 0 0;font-size:14px}
+.cta-box.ready .pergunta{margin:18px 0 10px}
+.cta-duo{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cta-duo .btn{min-height:54px;border-radius:16px;font-size:15px;gap:6px}
+/* Adicionar: barra fixa em cima */
+.addbar{position:sticky;top:-12px;z-index:5;display:flex;align-items:center;gap:12px;justify-content:space-between;margin:-12px -14px 12px;padding:12px 14px;background:var(--surface);border-bottom:1px solid var(--line);box-shadow:0 8px 18px -14px rgba(0,0,0,.4)}
+.addbar[hidden]{display:none}
+.addbar div{display:flex;flex-direction:column;min-width:0}
+.addbar b{font-size:15px}
+.addbar span{font-size:13px;color:var(--muted)}
+.addbar .btn{flex:none;min-height:48px;padding:0 16px;border-radius:14px;font-size:14px;gap:6px;white-space:nowrap}
+@media (max-width:420px){.addbar{flex-direction:column;align-items:stretch}.addbar .btn{width:100%}}
+/* revisão da importação: confirmar fica em cima */
+.imp-top{position:sticky;top:-12px;z-index:4;background:var(--surface);margin:-12px -12px 6px;padding:12px;border-radius:16px 16px 0 0;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.imp-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.imp-h h4{margin:0}
+.imp-top .btn{width:100%}
+.imp-top .link-btn{margin:0}
+.ready-top .ready-n{align-items:flex-start}.ready-top .ready-n b{font-size:40px}
+.ready-top .ready-n em{font-style:normal;font-weight:800;font-size:14px;color:var(--ink);margin-bottom:2px}

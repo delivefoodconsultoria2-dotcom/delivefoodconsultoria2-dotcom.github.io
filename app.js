@@ -524,15 +524,16 @@ function renderNext() {
     const fim = new Date(Date.now() + (km / SPEED[st.settings.vehicle] * 60 + p.length * st.settings.stopMin) * 60000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     const grupos = [...new Set(p.map(x => x.grupo || 0))].sort((a, b) => a - b);
     const legenda = grupos.length > 1 ? `<div class="legenda">${grupos.map(g => `<span class="lg${g ? " g" + (((g - 1) % 4) + 1) : ""}"><i></i>${g ? "Rota " + (g + 1) : "Principal"}: ${p.filter(x => (x.grupo || 0) === g).length}</span>`).join("")}</div>` : "";
+    const esperando = busy && st.queroComecar;
     box.innerHTML = `<div class="cta-box ready">
-      <h3>${busy ? "Organizando a rota..." : "Rota pronta"}</h3>
-      <div class="ready-n"><b>${p.length}</b><span>parada${p.length > 1 ? "s" : ""}${km ? ` · ${km1(km)} km` : ""}${busy ? "" : ` · fim ~${fim}`}</span></div>
+      <div class="ready-top"><div class="ready-n"><em>${busy ? "Organizando a rota" : "Rota pronta"}</em><b>${p.length}</b><span>parada${p.length > 1 ? "s" : ""}${km ? ` · ${km1(km)} km` : ""}${busy ? "" : ` · fim ~${fim}`}</span></div>
+        <span class="ready-st${busy ? " busy" : ""}">${busy ? `<i class="spin"></i>Achando ${busy} no mapa` : (grupos.length > 1 ? "✓ Tudo junto e otimizado" : "✓ Otimizada na melhor ordem")}</span></div>
       ${legenda}
-      ${busy ? `<p>Achando ${busy} endereço(s) no mapa. Já já fica tudo otimizado.</p>` : `<p class="ok-txt">✓ ${grupos.length > 1 ? "Tudo junto e otimizado na melhor ordem." : "Otimizada na melhor ordem."}${semMapa ? ` ${semMapa} endereço(s) sem local no mapa ficam no fim.` : ""}</p>`}
+      <button class="btn primary cta" data-act="start" ${esperando ? "disabled" : ""}><svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>${esperando ? "COMEÇANDO..." : "COMEÇAR ROTA"}</button>
+      ${esperando ? `<p class="ok-txt">Começa sozinho assim que achar os ${busy} endereço(s) que faltam.</p>` : semMapa ? `<p class="ok-txt">${semMapa} endereço(s) sem local no mapa ficam no fim.</p>` : ""}
       <div class="pergunta">Gostaria de adicionar outros endereços?</div>
-      <div class="cta-par"><button class="btn dark otz" data-act="addmore" ${busy ? "disabled" : ""}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Sim, adicionar</button>
-        <button class="btn primary cta" data-act="start" ${busy ? "disabled" : ""}><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg><span>Não, <b>COMEÇAR ROTA</b></span></button></div>
-      <button class="btn warn" data-act="cancelroute" style="width:100%;margin-top:10px">Cancelar rota</button>
+      <div class="cta-duo"><button class="btn dark" data-act="addmore"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Sim, adicionar</button>
+        <button class="btn warn" data-act="cancelroute">Cancelar rota</button></div>
       <button class="link-btn" data-go="paradas">Ver a lista de paradas</button></div>`;
     return;
   }
@@ -581,24 +582,37 @@ function autoOtimizar() {
   clearTimeout(autoOptT);
   autoOptT = setTimeout(() => {
     const p = pending();
-    if (rotaComecou() || p.some(x => x.geo === "busy") || p.filter(hasGeo).length < 2) { if (p.length) renderAll(false); return; }
-    optimize(); st.otimizada = true; save(); renderNext();
+    if (rotaComecou() || p.some(x => x.geo === "busy")) { if (p.length) renderAll(false); return; }
+    if (p.filter(hasGeo).length >= 2) optimize();
+    st.otimizada = true; save();
+    if (st.queroComecar) { comecarRota({ abrirNav: false }); return; }
+    renderNext();
   }, 250);
 }
-function comecarRota() {
+function comecarRota({ abrirNav = true } = {}) {
   const p = pending(); if (!p.length) return;
+  // ainda achando endereço no mapa: começa sozinho quando terminar
+  if (p.some(x => x.geo === "busy")) { st.queroComecar = true; save(); go("rota"); renderNext(); toast("Terminando de achar os endereços. A rota começa sozinha."); return; }
+  st.queroComecar = false;
   if (!st.otimizada && p.filter(hasGeo).length >= 2) optimize();
-  st.started = true; st.otimizada = true; save(); renderAll(true);
+  st.started = true; st.otimizada = true; save(); go("rota"); renderAll(true);
   const s = pending()[0]; if (!s) return;
   toast("Rota começou. Boa entrega!");
   if (st.settings.speak) try { speak("Rota começou. Primeira entrega: " + s.street + ", " + spokenNum(s.num || "sem número") + "."); } catch (e) {}
+  if (!abrirNav) return; // sem toque do entregador o celular bloqueia abrir o Waze; ele toca em Navegar
   const L2 = navLinks(s); const url = st.settings.nav === "google" ? L2.gmaps : L2.waze;
   setTimeout(() => window.open(url, "_blank", "noopener"), 600);
+}
+/* desistir de adicionar: volta, otimiza tudo e começa */
+function desistirEComecar() {
+  $("#importBox").innerHTML = ""; importList = [];
+  comecarRota();
 }
 function cancelarRota(btn) {
   const feitas = st.stops.filter(s => s.status !== "pending").length;
   twoTap(btn, feitas ? "Toque de novo: tira as pendentes" : "Toque de novo para cancelar", () => {
     st.stops = st.stops.filter(s => s.status !== "pending");
+    st.queroComecar = false;
     if (!st.stops.length) { st.started = false; st.otimizada = false; st.ultimaAdicao = 0; }
     save(); renderAll(true);
     toast(feitas ? "Paradas pendentes removidas. As entregas feitas continuam no resumo." : "Rota cancelada. Pode carregar outra.");
@@ -649,11 +663,21 @@ function renderResumo() {
   $("#report").textContent = reportText();
   renderYear(); renderPeriod(); renderDue(); renderMaint(); meiCheck();
 }
-function renderAll(fit) { renderStats(); renderNext(); renderList(); renderResumo(); drawMap(fit); }
+function renderAll(fit) { renderStats(); renderNext(); renderList(); renderResumo(); drawMap(fit); renderAddBar(); }
 
 /* ===================== navegação entre abas ===================== */
+/* barra no topo do Adicionar: com rota montada, dá para desistir e começar */
+function renderAddBar() {
+  const bar = $("#addBar"); if (!bar) return;
+  const p = pending();
+  if (!p.length || rotaComecou() || importList.length) { bar.hidden = true; bar.innerHTML = ""; return; }
+  bar.hidden = false;
+  bar.innerHTML = `<div><b>Sua rota tem ${p.length} parada${p.length > 1 ? "s" : ""}</b><span>Os novos entram em outra cor. Desistiu de adicionar?</span></div>
+    <button class="btn primary" data-act="desistir"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>Desistir e COMEÇAR ROTA</button>`;
+}
 function go(name) {
   document.body.dataset.tab = name;
+  if (name === "add") renderAddBar();
   ["rota", "paradas", "add", "resumo"].forEach(n => $("#s-" + n).hidden = n !== name);
   $$(".nav button").forEach(b => b.dataset.s === name ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
   $(".panel").scrollTop = 0;
@@ -893,9 +917,14 @@ function showImport(list, source) {
   importList = list.map(a => ({ ...limparEndereco(a), src: source, ok: true }));
   const box = $("#importBox");
   if (!importList.length) { box.innerHTML = `<div class="imp"><h4>Nenhum endereço encontrado</h4><p class="sub">Confira se o texto tem rua e número. Você também pode digitar o endereço.</p></div>`; return; }
-  box.innerHTML = `<div class="imp"><h4>${importList.length} endereço(s) encontrados</h4><p class="hint">Desmarque o que não for entrega.</p>
-    ${importList.map((a, i) => `<label class="imp-row"><input type="checkbox" data-imp="${i}" checked><div><b>${esc(addrLine(a))}</b><br><span class="sub">${esc([a.comp, a.bairro, a.city, a.cep, a.client, a.code].filter(Boolean).join(" · ") || a.raw || "")}</span></div></label>`).join("")}
-    <button class="btn primary big" id="impGo" style="margin-top:10px">Adicionar à rota</button></div>`;
+  const temRota = pending().length > 0;
+  box.innerHTML = `<div class="imp"><div class="imp-top">
+      <div class="imp-h"><h4>${importList.length} endereço(s) encontrados</h4><span class="hint">Desmarque o que não for entrega.</span></div>
+      <button class="btn primary big" id="impGo" data-act="impgo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 4.5 4.5L19 7"/></svg>${temRota ? "Juntar na rota e otimizar" : "Pronto, montar a rota"}</button>
+      <button class="link-btn" data-act="${temRota ? "desistir" : "impcancel"}">${temRota ? "Desistir destes e começar a rota" : "Cancelar"}</button></div>
+    ${importList.map((a, i) => `<label class="imp-row"><input type="checkbox" data-imp="${i}" checked><div><b>${esc(addrLine(a) || a.raw || "Endereço sem rua")}</b><br><span class="sub">${esc([a.comp, a.bairro, a.city, a.cep, a.client, a.code].filter(Boolean).join(" · ") || "")}</span></div></label>`).join("")}
+    <button class="btn primary big" data-act="impgo" style="margin-top:10px">${temRota ? "Juntar na rota e otimizar" : "Pronto, montar a rota"}</button></div>`;
+  renderAddBar();
   box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 function confirmImport() {
@@ -904,7 +933,7 @@ function confirmImport() {
   const exist = new Set(st.stops.map(s => (s.street + "|" + s.num + "|" + s.comp).toLowerCase()));
   const fresh = list.filter(a => !exist.has((a.street + "|" + a.num + "|" + a.comp).toLowerCase()));
   addStops(fresh);
-  $("#importBox").innerHTML = ""; importList = [];
+  $("#importBox").innerHTML = ""; importList = []; ["#docStatus", "#ocrStatus"].forEach(q => { const x = $(q); if (x) x.hidden = true; }); renderAddBar();
   toast(`${fresh.length} parada(s) adicionadas${list.length - fresh.length ? ` (${list.length - fresh.length} repetidas ignoradas)` : ""}. Localizando no mapa...`, 4000);
   go("rota");
 }
@@ -929,25 +958,37 @@ async function handleOcr(files) {
 
 /* ===================== entrada: planilha / PDF / TXT ===================== */
 const COLS = {
-  street: /^(endere[cç]o|rua|logradouro|address|destino|endere[cç]o de entrega|endere[cç]o completo)/i, num: /^(n[uú]mero|n[º°o]?\.?$|num)/i, comp: /^(complemento|compl)/i,
-  bairro: /^(bairro|distrito)/i, city: /^(cidade|munic[ií]pio|city)/i, uf: /^(uf|estado)$/i, cep: /^(cep|zip)/i, client: /^(cliente|nome|destinat[aá]rio|recebedor)/i,
-  phone: /^(telefone|fone|celular|whats|contato|tel)/i, code: /^(c[oó]digo|pedido|rastreio|rastreamento|id|tracking|nf|nota)/i, pk: /^(qtd|quantidade|volumes|pacotes)/i, ref: /^(refer[eê]ncia|obs|observa)/i
+  street: /endere[cç]o|logradouro|address|^rua\b|^destino|^local de entrega/i, num: /^(n[uú]mero|n[º°o]?\.?$|num\b|n[º°]\s)/i, comp: /^(complemento|compl)/i,
+  bairro: /^(bairro|distrito|neighbo|district)/i, city: /^(cidade|munic[ií]pio|city)/i, uf: /^(uf|estado|state)$/i, cep: /^(cep|zip|postal|c[oó]digo postal)/i, client: /^(cliente|nome|destinat[aá]rio|recebedor|recipient|customer)/i,
+  phone: /^(telefone|fone|celular|whats|contato|tel|phone)/i, code: /^(c[oó]digo|pedido|rastreio|rastreamento|id\b|tracking|nf|nota|spx|tn\b|awb|at id|shipment|package)/i, pk: /^(qtd|quantidade|volumes|pacotes|packages)/i, ref: /^(refer[eê]ncia|obs|observa|notes?)/i,
+  lat: /^(lat|latitude)\b/i, lng: /^(lng|lon|long|longitude)\b/i
 };
+const COL_ORDEM = ["lat", "lng", "cep", "num", "comp", "bairro", "city", "uf", "client", "phone", "code", "pk", "ref", "street"]; // rua por último: "Complemento do endereço" é complemento
+const coord = (v, max) => { const n = parseFloat(String(v ?? "").replace(",", ".")); return isFinite(n) && n !== 0 && Math.abs(n) <= max ? n : null; };
 function rowsToAddresses(rows) {
   rows = rows.filter(r => r && r.some(c => String(c ?? "").trim()));
   let hi = -1, map2 = {};
-  for (let i = 0; i < Math.min(6, rows.length); i++) {
-    const m = {}; rows[i].forEach((c, j) => { const h = String(c ?? "").trim(); Object.entries(COLS).forEach(([k, re]) => { if (m[k] == null && re.test(h)) m[k] = j; }); });
-    if (m.street != null || m.cep != null) { hi = i; map2 = m; break; }
+  for (let i = 0; i < Math.min(8, rows.length); i++) {
+    const m = {}; rows[i].forEach((c, j) => { const h = String(c ?? "").trim(); if (!h) return; for (const k of COL_ORDEM) { const re = COLS[k]; if (m[k] == null && !Object.values(m).includes(j) && re.test(h)) { m[k] = j; break; } } });
+    if (m.street != null || m.cep != null || (m.lat != null && m.lng != null)) { hi = i; map2 = m; break; }
   }
   if (hi < 0) return extractAddresses(rows.map(r => r.filter(c => String(c ?? "").trim()).join(", ")).join("\n"));
+  // sem coluna de rua reconhecida: usa a coluna que mais parece endereço (texto com nome de rua)
+  if (map2.street == null) {
+    const usadas = new Set(Object.values(map2)); let best = -1, bestN = 0;
+    (rows[hi] || []).forEach((_, j) => { if (usadas.has(j)) return; const n = rows.slice(hi + 1, hi + 40).filter(r => STREET_RE.test(String(r[j] ?? ""))).length; if (n > bestN) { bestN = n; best = j; } });
+    if (best >= 0) map2.street = best;
+  }
   return rows.slice(hi + 1).map(r => {
     const g = k => map2[k] != null ? String(r[map2[k]] ?? "").trim() : "";
     let a = { raw: g("street"), street: g("street"), num: g("num"), comp: g("comp"), bairro: g("bairro"), city: [g("city"), g("uf")].filter(Boolean).join(" - "), cep: g("cep") };
-    if (a.street && !a.num) { const p = parseAddressLine(a.street); a = { ...a, street: p.street, num: p.num || "s/n", comp: a.comp || p.comp, bairro: a.bairro || p.bairro, city: a.city || p.city, cep: a.cep || p.cep }; }
+    if (a.street && (!a.num || /,/.test(a.street))) { const p = parseAddressLine(a.street); a = { ...a, street: p.street, num: a.num || p.num || "s/n", comp: a.comp || p.comp, bairro: a.bairro || p.bairro, city: a.city || p.city, cep: a.cep || p.cep }; }
     if (a.cep && digits(a.cep).length <= 8) a.cep = digits(a.cep).padStart(8, "0").replace(/(\d{5})(\d{3})/, "$1-$2");
-    return { ...a, client: g("client"), phone: g("phone"), code: g("code"), pk: +g("pk") || 1, ref: g("ref") };
-  }).filter(a => a.street || a.cep);
+    const lat = coord(g("lat"), 90), lng = coord(g("lng"), 180);
+    const o = { ...a, client: g("client"), phone: g("phone"), code: g("code"), pk: +g("pk") || 1, ref: g("ref") };
+    if (lat != null && lng != null && lat < 6 && lat > -34 && lng < -28 && lng > -74) { o.lat = lat; o.lng = lng; } // ponto já vem na planilha: nem precisa procurar no mapa
+    return o;
+  }).filter(a => a.street || a.cep || a.lat != null);
 }
 async function handleDoc(file) {
   const status = $("#docStatus"); status.hidden = false; status.textContent = "Lendo " + file.name + "...";
@@ -2038,9 +2079,13 @@ document.addEventListener("click", e => {
   if (d.act === "sample") loadSample();
   if (d.act === "start") comecarRota();
   if (d.act === "optall") { const p = pending(); if (p.filter(hasGeo).length >= 2) optimize(); else toast("Rota organizada"); st.otimizada = true; save(); renderAll(true); }
-  if (d.act === "addmore") { st.ultimaAdicao = 0; save(); go("add"); toast("Os novos endereços vão aparecer em outra cor e entram otimizados junto com a rota", 4000); }
+  if (d.act === "addmore") { st.ultimaAdicao = 0; save(); go("add"); }
   if (d.act === "cancelroute") cancelarRota(t);
-  if (d.act === "newroute") { st.stops = []; st.started = false; st.otimizada = false; save(); renderAll(true); go("add"); }
+  if (d.act === "desistir") desistirEComecar();
+  if (d.act === "impgo") confirmImport();
+  if (d.act === "impnone") { importList.forEach(a => a.ok = false); $$("[data-imp]").forEach(c => c.checked = false); }
+  if (d.act === "impcancel") { $("#importBox").innerHTML = ""; importList = []; $$(".pane .status, #docStatus, #ocrStatus").forEach(x => x.hidden = true); renderAddBar(); }
+  if (d.act === "newroute") { st.queroComecar = false; st.stops = []; st.started = false; st.otimizada = false; save(); renderAll(true); go("add"); }
   if (d.act === "goal") goalSheet();
   if (d.act === "odo") odoSheet();
   if (d.act === "sos") sosSheet();
@@ -2062,7 +2107,6 @@ document.addEventListener("click", e => {
   if (d.per) { perKind = d.per; grpKind = d.per === "year" ? "month" : "day"; renderPeriod(); }
   if (d.grp) { grpKind = d.grp; renderPeriod(); }
   if (d.due) handleDue(d.due);
-  if (t.id === "impGo") confirmImport();
 });
 document.addEventListener("change", e => { if (e.target.dataset.imp != null) importList[+e.target.dataset.imp].ok = e.target.checked; });
 $("#optBtn").addEventListener("click", () => { optimize(); st.otimizada = true; save(); renderNext(); });
