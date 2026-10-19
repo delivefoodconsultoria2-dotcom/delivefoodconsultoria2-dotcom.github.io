@@ -220,7 +220,7 @@ async function photon(s) {
   const num = /^\d+/.test(s.num || "") ? s.num.match(/^\d+/)[0] : "";
   if (!s.street) return null;
   const q = [s.street + (num ? " " + num : ""), s.bairro, cityName].filter(Boolean).join(", ");
-  const bias = st.start || st.cityCenter || { lat: REGION.center[0], lng: REGION.center[1] };
+  const bias = (ondeEstou && Date.now() - ondeEstou.t < 30 * 60000 ? ondeEstou : null) || st.start || st.cityCenter || { lat: REGION.center[0], lng: REGION.center[1] };
   const u = new URL("https://photon.komoot.io/api/");
   u.searchParams.set("q", q); u.searchParams.set("limit", "3"); u.searchParams.set("lat", bias.lat); u.searchParams.set("lon", bias.lng);
   const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 7000);
@@ -549,7 +549,8 @@ function renderNext() {
   }
   const s = p[0], L2 = navLinks(s, true), grp = sameBuildingCount(s), dist = hav(lastPoint(), s);
   if (L2.gmapsMulti) L2.gmaps = L2.gmapsMulti;
-  const prefer = st.settings.nav !== "waze" ? ["gmaps", "Google Maps", "waze", "Waze"] : ["waze", "Waze", "gmaps", "Google Maps"];
+  const prefer = st.settings.nav === "waze" ? ["waze", "Waze", "gmaps", "Google Maps"] : ["gmaps", "Google Maps", "waze", "Waze"];
+  const viaApp = st.settings.nav === "app";
   const perto = hasGeo(s) ? p.slice(2).filter(x => hasGeo(x) && hav(s, x) < 0.4).slice(0, 3) : [];
   const mins = dist ? Math.max(1, Math.round(dist / SPEED[st.settings.vehicle] * 60)) : 0;
   const I = {
@@ -577,8 +578,8 @@ function renderNext() {
     ${addrNote(s) ? `<div class="note warnnote">${I.info}<span><b>Você anotou neste endereço:</b> ${esc(addrNote(s))}</span></div>` : ""}
     ${s.ref ? `<div class="note">${I.info}<span><b>Referência:</b> ${esc(s.ref)}</span></div>` : ""}
     <div class="stack">
-      <div class="navsw" role="group" aria-label="App de navegação"><span>Navegar pelo</span><button data-navset="google" aria-pressed="${st.settings.nav !== "waze"}">Google Maps</button><button data-navset="waze" aria-pressed="${st.settings.nav === "waze"}">Waze</button></div>
-      <div class="actions"><a class="btn dark" href="${L2[prefer[0]]}" target="_blank" rel="noopener">${I.nav}<span class="navlbl">Navegar no ${prefer[1]}${prefer[0] === "gmaps" && L2.multiN > 1 ? `<small>com as próximas ${L2.multiN} paradas no caminho</small>` : ""}</span></a>
+      <div class="navsw" role="group" aria-label="App de navegação"><span>Navegar pelo</span><button data-navset="google" aria-pressed="${st.settings.nav !== "waze"}">Google Maps</button><button data-navset="waze" aria-pressed="${st.settings.nav === "waze"}">Waze</button><button data-navset="app" aria-pressed="${st.settings.nav === "app"}">No app</button></div>
+      <div class="actions">${viaApp ? `<button class="btn dark" data-act="navapp">${I.nav}<span class="navlbl">${NV.on ? "Navegando aqui no app" : "Navegar aqui no app"}<small>tela de perto, com cada curva</small></span></button>` : `<a class="btn dark" href="${L2[prefer[0]]}" target="_blank" rel="noopener">${I.nav}<span class="navlbl">Navegar no ${prefer[1]}${prefer[0] === "gmaps" && L2.multiN > 1 ? `<small>com as próximas ${L2.multiN} paradas no caminho</small>` : ""}</span></a>`}
         <a class="btn ghost icon" href="${L2[prefer[2]]}" target="_blank" rel="noopener" title="Abrir no ${prefer[3]}" aria-label="Abrir no ${prefer[3]}">${I.alt}</a>
         <button class="btn ghost icon" data-contact="${s.id}" title="Ligar ou mandar WhatsApp" aria-label="Contato do cliente">${I.phone}</button></div>
       <button class="btn primary big" data-deliver="${s.id}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 4.5 4.5L19 7"/></svg>Entregue</button>
@@ -614,7 +615,8 @@ function comecarRota({ abrirNav = true } = {}) {
   const s = pending()[0]; if (!s) return;
   toast("Rota começou. Boa entrega!");
   if (st.settings.speak) try { speak("Rota começou. Primeira entrega: " + s.street + ", " + spokenNum(s.num || "sem número") + "."); } catch (e) {}
-  if (!abrirNav) return; // sem toque do entregador o celular bloqueia abrir o Waze; ele toca em Navegar
+  if (hasGeo(s)) iniciarNavApp(s); // tela aproximada com as curvas, sempre
+  if (!abrirNav || st.settings.nav === "app") return; // sem toque do entregador o celular bloqueia abrir app externo
   const L2 = navLinks(s, true); const url = st.settings.nav === "waze" ? L2.waze : (L2.gmapsMulti || L2.gmaps);
   setTimeout(() => window.open(url, "_blank", "noopener"), 600);
 }
@@ -628,7 +630,7 @@ function cancelarRota(btn) {
   const curto = btn.classList.contains("xclose");
   twoTap(btn, curto ? "Cancelar? Toque de novo" : feitas ? "Toque de novo: tira as pendentes" : "Toque de novo para cancelar", () => {
     st.stops = st.stops.filter(s => s.status !== "pending");
-    st.queroComecar = false;
+    st.queroComecar = false; if (NV.on) pararNavApp();
     if (!st.stops.length) { st.started = false; st.otimizada = false; st.ultimaAdicao = 0; }
     save(); renderAll(true);
     toast(feitas ? "Paradas pendentes removidas. As entregas feitas continuam no resumo." : "Rota cancelada. Pode carregar outra.");
@@ -922,7 +924,7 @@ function useGps(fromSettings) {
   if (!navigator.geolocation) { toast("Este aparelho não informa a localização"); return; }
   toast("Buscando sua localização...");
   navigator.geolocation.getCurrentPosition(async p => {
-    st.start = { lat: p.coords.latitude, lng: p.coords.longitude, label: "Minha localização" };
+    st.start = { lat: p.coords.latitude, lng: p.coords.longitude, label: "Minha localização" }; ondeEstou = { lat: st.start.lat, lng: st.start.lng, t: Date.now() };
     if (!st.settings.city) { const a = await reverse(st.start.lat, st.start.lng); if (a.city) st.settings.city = a.city; }
     save(); if (fromSettings) closeSheet(); renderAll(true); toast("Partida: sua localização atual");
   }, () => toast("Não consegui a localização. Libere a permissão de localização."), { enableHighAccuracy: true, timeout: 15000 });
@@ -1170,23 +1172,213 @@ function onboardSheet() {
 }
 
 /* ===================== app de navegação: Google Maps (padrão) ou Waze ===================== */
-const NAV_ICON = { google: '<svg width="26" height="26" viewBox="0 0 24 24"><path fill="#34A853" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg>',
+const NAV_ICON = { app: '<svg width="26" height="26" viewBox="0 0 24 24"><rect width="24" height="24" rx="6" fill="#18A957"/><path d="M12 5 18 18 12 15 6 18z" fill="#fff"/></svg>', google: '<svg width="26" height="26" viewBox="0 0 24 24"><path fill="#34A853" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg>',
   waze: '<svg width="26" height="26" viewBox="0 0 24 24"><circle cx="12" cy="11" r="8.5" fill="#33CCFF"/><circle cx="9.3" cy="10" r="1.2" fill="#0B1A2A"/><circle cx="14.7" cy="10" r="1.2" fill="#0B1A2A"/><path d="M8.8 13.3c1.8 1.6 4.6 1.6 6.4 0" stroke="#0B1A2A" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>' };
 function precisaPerguntarNav() { return !st.navAsked || Date.now() - st.navAsked > 604800000; }
 function navSheet(depois) {
-  sheet(`<h3>Qual app você usa para navegar?</h3><p class="sub">O DeliveRota abre a entrega direto nele. Dá para trocar a qualquer hora no cartão da entrega.</p>
+  sheet(`<h3>Qual app você usa para navegar?</h3><p class="sub">Ao começar a rota, a tela do DeliveRota já aproxima e mostra cada curva. Escolha também onde abrir a navegação. Dá para trocar a qualquer hora no cartão da entrega.</p>
     <div class="navpick">
-      <button data-navpick="google" aria-pressed="${st.settings.nav !== "waze"}">${NAV_ICON.google}<span><b>Google Maps</b><em>Recomendado · mostra as próximas paradas no caminho</em></span></button>
+      <button data-navpick="google" aria-pressed="${st.settings.nav !== "waze"}">${NAV_ICON.google}<span><b>Google Maps</b><em>Mostra as próximas paradas no caminho</em></span></button>
       <button data-navpick="waze" aria-pressed="${st.settings.nav === "waze"}">${NAV_ICON.waze}<span><b>Waze</b><em>Uma parada por vez</em></span></button>
+      <button data-navpick="app" aria-pressed="${st.settings.nav === "app"}">${NAV_ICON.app}<span><b>Aqui no DeliveRota</b><em>Mapa bem de perto, com a seta de cada curva e voz</em></span></button>
     </div>`, bg => {
     bg.querySelectorAll("[data-navpick]").forEach(b => b.addEventListener("click", () => {
       st.settings.nav = b.dataset.navpick; st.navAsked = Date.now(); save(); closeSheet(); renderNext();
-      toast("Navegação pelo " + (st.settings.nav === "waze" ? "Waze" : "Google Maps"));
+      toast("Navegação pelo " + ({ waze: "Waze", app: "DeliveRota" }[st.settings.nav] || "Google Maps"));
       if (depois) depois();
     }));
   });
 }
+/* ===================== navegação dentro do app: tela aproximada, seta de cada curva ===================== */
+let ondeEstou = null;            // última posição do GPS (também usada para buscar endereço perto de onde a pessoa está)
+const NV = { on: false, alvo: null, rota: null, passos: [], prox: 1, watch: null, eu: null, euAnt: null, rumo: 0, ultRecalc: 0, fora: 0, falou: {}, layer: null, meMk: null, chegou: false };
+const MOD_ROT = { "straight": 0, "slight right": 40, "right": 90, "sharp right": 135, "uturn": 180, "sharp left": -135, "left": -90, "slight left": -40 };
+function mDist(a, b) { return hav(a, b) * 1000; }
+function distSeg(p, a, b) { // metros do ponto p até o segmento a-b
+  const k = 111320, cl = Math.cos(p.lat * Math.PI / 180);
+  const ax = (a.lng - p.lng) * k * cl, ay = (a.lat - p.lat) * k, bx = (b.lng - p.lng) * k * cl, by = (b.lat - p.lat) * k;
+  const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy; let t = L2 ? -(ax * dx + ay * dy) / L2 : 0; t = Math.max(0, Math.min(1, t));
+  return Math.hypot(ax + t * dx, ay + t * dy);
+}
+function rumoEntre(a, b) { const y = Math.sin((b.lng - a.lng) * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180), x = Math.cos(a.lat * Math.PI / 180) * Math.sin(b.lat * Math.PI / 180) - Math.sin(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.cos((b.lng - a.lng) * Math.PI / 180); return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360; }
+function textoPasso(p) {
+  const m = p.maneuver || {}, nome = p.name ? p.name : "", na = nome ? " na " + nome : "";
+  if (m.type === "arrive") return "Você chegou ao destino";
+  if (m.type === "depart") return "Siga" + (nome ? " pela " + nome : "");
+  if (m.type === "roundabout" || m.type === "rotary" || m.type === "roundabout turn") return `Na rotatória, pegue a ${m.exit || 1}ª saída${nome ? " para a " + nome : ""}`;
+  const mod = m.modifier || "straight";
+  const v = { "left": "Vire à esquerda", "right": "Vire à direita", "slight left": "Mantenha a esquerda", "slight right": "Mantenha a direita", "sharp left": "Curva fechada à esquerda", "sharp right": "Curva fechada à direita", "straight": "Siga em frente", "uturn": "Faça o retorno" }[mod] || "Siga";
+  return v + na;
+}
+function setaPasso(p) {
+  const m = p.maneuver || {};
+  if (m.type === "arrive") return '<svg viewBox="0 0 48 48" width="64" height="64"><path d="M24 4c-7.7 0-14 6.1-14 13.8C10 28.2 24 44 24 44s14-15.8 14-26.2C38 10.1 31.7 4 24 4z" fill="#fff"/><circle cx="24" cy="18" r="5.5" fill="#0E8A44"/></svg>';
+  if (m.type === "roundabout" || m.type === "rotary" || m.type === "roundabout turn") return `<svg viewBox="0 0 48 48" width="64" height="64" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="26" r="9"/><path d="M24 35v10M33 26h10l-5-5M38 31l5-5"/></svg>`;
+  const rot = MOD_ROT[m.modifier || "straight"] ?? 0;
+  if ((m.modifier || "") === "uturn") return '<svg viewBox="0 0 48 48" width="64" height="64" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"><path d="M30 44V20a8 8 0 0 0-16 0v6"/><path d="M8 20l6 7 6-7"/></svg>';
+  return `<svg viewBox="0 0 48 48" width="64" height="64" style="transform:rotate(${rot}deg)"><path d="M24 6 10 22h9v20h10V22h9z" fill="#fff"/></svg>`;
+}
+const fmtDist = m => m >= 1000 ? (m / 1000).toFixed(1).replace(".", ",") + " km" : (m > 100 ? Math.round(m / 10) * 10 : Math.max(5, Math.round(m / 5) * 5)) + " m";
+async function buscarRotaApp(de, para) {
+  const u = `https://router.project-osrm.org/route/v1/driving/${de.lng},${de.lat};${para.lng},${para.lat}?steps=true&geometries=geojson&overview=full`;
+  const j = await (await fetch(u)).json();
+  if (!j.routes || !j.routes[0]) throw new Error("sem rota");
+  const r = j.routes[0];
+  return { linha: r.geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] })), passos: r.legs[0].steps.filter(s => s.maneuver), km: r.distance / 1000, min: r.duration / 60 };
+}
+function navUI() {
+  let b = $("#navBan");
+  if (!b) {
+    $(".mapcol").insertAdjacentHTML("beforeend", `<div id="navBan" class="navban" hidden><div class="nb-seta" id="nbSeta"></div><div class="nb-txt"><b id="nbDist"></b><span id="nbInstr"></span><em id="nbDepois"></em></div></div>
+      <div id="navFoot" class="navfoot" hidden><div><b id="nfDest"></b><span id="nfResto"></span></div><button class="btn primary sm" id="nfEntregue" hidden>Entregue</button><button class="btn ghost sm" id="nfCentro" aria-label="Centralizar">◎</button><button class="btn warn sm" id="nfSair">Sair</button></div>`);
+    $("#nfEntregue").addEventListener("click", () => { if (NV.alvo) deliverSheet(NV.alvo); });
+    $("#nfSair").addEventListener("click", () => pararNavApp(true));
+    $("#nfCentro").addEventListener("click", () => { if (NV.eu && map) map.setView([NV.eu.lat, NV.eu.lng], 18); NV.solto = false; });
+    b = $("#navBan");
+  }
+  return b;
+}
+async function iniciarNavApp(s) {
+  if (!map || !window.L) { toast("O mapa precisa de internet para a navegação aqui no app."); return; }
+  if (!s) s = pending()[0]; if (!s || !hasGeo(s)) { toast("Essa parada ainda não tem local no mapa."); return; }
+  if (!navigator.geolocation) { toast("Este aparelho não informa a localização."); return; }
+  NV.on = true; NV.alvo = s; NV.rota = null; NV.prox = 1; NV.falou = {}; NV.chegou = false; NV.solto = false;
+  document.body.classList.add("navon"); navUI().hidden = false; $("#navFoot").hidden = false;
+  $("#nbInstr").textContent = "Buscando sua localização..."; $("#nbDist").textContent = ""; $("#nbDepois").textContent = ""; $("#nbSeta").innerHTML = "";
+  $("#nfDest").textContent = `Parada ${stopNumber(s)} · ${addrLine(s)}`; $("#nfResto").textContent = "";
+  setTimeout(() => map.invalidateSize(), 80);
+  try { navigator.wakeLock && navigator.wakeLock.request("screen").then(l => NV.lock = l).catch(() => {}); } catch (e) {}
+  if (NV.watch == null) NV.watch = navigator.geolocation.watchPosition(novaPosicao, err => { if (err && err.code === 1) { pararNavApp(); toast("Libere a localização para o DeliveRota mostrar as curvas aqui no app.", 4500); } else $("#nbInstr").textContent = "Procurando o sinal do GPS..."; }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+  map.on("dragstart", soltouMapa);
+}
+function soltouMapa() { if (NV.on) NV.solto = true; }
+function pararNavApp(manual) {
+  NV.on = false; if (NV.watch != null) { navigator.geolocation.clearWatch(NV.watch); NV.watch = null; }
+  try { NV.lock && NV.lock.release(); } catch (e) {} NV.lock = null;
+  if (NV.layer) { NV.layer.remove(); NV.layer = null; } NV.meMk = null;
+  document.body.classList.remove("navon"); const b = $("#navBan"); if (b) { b.hidden = true; $("#navFoot").hidden = true; }
+  if (map) { map.off("dragstart", soltouMapa); setTimeout(() => { map.invalidateSize(); drawMap(true); }, 80); }
+  if (manual) toast("Navegação do app desligada");
+}
+async function novaPosicao(pos) {
+  const eu = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+  ondeEstou = { ...eu, t: Date.now() };
+  if (!NV.on) return;
+  if (NV.eu && mDist(NV.eu, eu) > 3) NV.rumo = (pos.coords.heading != null && !isNaN(pos.coords.heading) && pos.coords.speed > 1) ? pos.coords.heading : rumoEntre(NV.eu, eu);
+  NV.eu = eu;
+  const s = NV.alvo;
+  if (!s || s.status !== "pending") { const n = pending()[0]; if (!n) { pararNavApp(); return; } NV.alvo = n; NV.rota = null; NV.prox = 1; NV.falou = {}; NV.chegou = false; $("#nfDest").textContent = `Parada ${stopNumber(n)} · ${addrLine(n)}`; }
+  // chegou
+  if (mDist(eu, NV.alvo) < 35) {
+    $("#nfEntregue").hidden = false;
+    if (!NV.chegou) { NV.chegou = true; speak(`Você chegou. Parada ${stopNumber(NV.alvo)}, ${NV.alvo.street}, ${spokenNum(NV.alvo.num)}.`, true); beep(); }
+    $("#nbSeta").innerHTML = setaPasso({ maneuver: { type: "arrive" } }); $("#nbDist").textContent = "Chegou"; $("#nbInstr").textContent = addrLine(NV.alvo) + (NV.alvo.comp ? " · " + NV.alvo.comp : ""); $("#nbDepois").textContent = "Toque em Entregue quando terminar";
+    desenharNav(); return;
+  }
+  $("#nfEntregue").hidden = true;
+  // rota: busca a primeira vez, quando sai do caminho ou a cada 2 min
+  const agora = Date.now();
+  let longe = false;
+  if (NV.rota) { let dmin = 1e9; const L_ = NV.rota.linha; for (let i = 0; i < L_.length - 1; i++) dmin = Math.min(dmin, distSeg(eu, L_[i], L_[i + 1])); longe = dmin > 45; NV.fora = longe ? NV.fora + 1 : 0; }
+  if ((!NV.rota || NV.fora >= 2 || agora - NV.ultRecalc > 120000) && agora - NV.ultRecalc > 8000) {
+    NV.ultRecalc = agora;
+    try { NV.rota = await buscarRotaApp(eu, NV.alvo); NV.prox = 1; NV.fora = 0; NV.falou = {}; if (longe) speak("Recalculando a rota.", true); }
+    catch (e) { if (!NV.rota) { $("#nbInstr").textContent = "Sem internet para traçar a rota. Siga pelo mapa."; desenharNav(); return; } }
+  }
+  if (!NV.rota) return;
+  const P = NV.rota.passos;
+  // avança o passo quando passa da curva
+  while (NV.prox < P.length - 1) {
+    const loc = { lat: P[NV.prox].maneuver.location[1], lng: P[NV.prox].maneuver.location[0] };
+    if (mDist(eu, loc) < 18) NV.prox++; else break;
+  }
+  const passo = P[Math.min(NV.prox, P.length - 1)];
+  const loc = { lat: passo.maneuver.location[1], lng: passo.maneuver.location[0] };
+  const d = mDist(eu, loc);
+  $("#nbSeta").innerHTML = setaPasso(passo); $("#nbDist").textContent = fmtDist(d); $("#nbInstr").textContent = textoPasso(passo);
+  const dep = P[NV.prox + 1]; $("#nbDepois").textContent = dep && dep.maneuver.type !== "arrive" ? "Depois: " + textoPasso(dep).toLowerCase() : (dep ? "Depois: chegada" : "");
+  // restante
+  let resto = mDist(eu, loc); for (let i = NV.prox; i < P.length; i++) resto += P[i].distance || 0;
+  $("#nfResto").textContent = `${fmtDist(resto)} · ~${Math.max(1, Math.round(resto / 1000 / SPEED[st.settings.vehicle] * 60))} min`;
+  // voz: avisa a 200 m e na hora da curva
+  const k = NV.prox;
+  if (d < 220 && d > 60 && !NV.falou[k + "a"]) { NV.falou[k + "a"] = 1; speak(`Em ${fmtDist(d).replace(" m", " metros")}, ${textoPasso(passo).toLowerCase()}.`, true); }
+  if (d <= 40 && !NV.falou[k + "b"]) { NV.falou[k + "b"] = 1; speak(textoPasso(passo) + ".", true); }
+  desenharNav();
+}
+function desenharNav() {
+  if (!map || !NV.eu) return;
+  if (!NV.layer) NV.layer = L.layerGroup().addTo(map); NV.layer.clearLayers();
+  if (NV.rota) {
+    const pts = NV.rota.linha.map(p => [p.lat, p.lng]);
+    L.polyline(pts, { color: "#0B5CFF", weight: 11, opacity: .25 }).addTo(NV.layer);
+    L.polyline(pts, { color: "#1A73E8", weight: 7, opacity: .95 }).addTo(NV.layer);
+    const P = NV.rota.passos[NV.prox]; if (P && P.maneuver.type !== "arrive") L.circleMarker([P.maneuver.location[1], P.maneuver.location[0]], { radius: 9, color: "#fff", weight: 3, fillColor: "#1A73E8", fillOpacity: 1 }).addTo(NV.layer);
+  }
+  L.marker([NV.eu.lat, NV.eu.lng], { icon: L.divIcon({ className: "", html: `<div class="meseta" style="transform:rotate(${NV.rumo}deg)"><svg viewBox="0 0 40 40" width="44" height="44"><circle cx="20" cy="20" r="18" fill="#1A73E8" stroke="#fff" stroke-width="3"/><path d="M20 8 29 29 20 24 11 29z" fill="#fff"/></svg></div>`, iconSize: [44, 44], iconAnchor: [22, 22] }), zIndexOffset: 2000, interactive: false }).addTo(NV.layer);
+  if (!NV.solto) map.setView([NV.eu.lat, NV.eu.lng], 18, { animate: true });
+}
+
+/* ===================== voz inteligente: entende para qual parada a pessoa quer ir ===================== */
+const PALAVRA_VAZIA = new Set(["rua", "r", "avenida", "av", "travessa", "alameda", "praca", "rodovia", "estrada", "beco", "da", "de", "do", "das", "dos", "e", "a", "o", "na", "no", "para", "pra", "pro", "numero", "n", "ir", "vou", "vamos", "me", "leva", "leve", "fazer", "faz", "entregar", "entrega", "agora", "a", "proxima", "parada", "cliente", "ate", "la", "em", "bora", "partiu", "casa", "passar", "ali", "endereco", "vamo", "quero", "preciso", "que", "depois", "primeiro", "aquela", "aquele", "seu", "dona", "senhor", "senhora"]);
+function lev(a, b) { if (a === b) return 0; const m = a.length, n = b.length; if (!m || !n) return m || n; let v = Array.from({ length: n + 1 }, (_, i) => i); for (let i = 1; i <= m; i++) { let prev = v[0]; v[0] = i; for (let j = 1; j <= n; j++) { const tmp = v[j]; v[j] = Math.min(v[j] + 1, v[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = tmp; } } return v[n]; }
+const NUM_FALADO = { um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10, onze: 11, doze: 12, treze: 13, quatorze: 14, catorze: 14, quinze: 15, dezesseis: 16, dezessete: 17, dezoito: 18, dezenove: 19, vinte: 20, trinta: 30, quarenta: 40, cinquenta: 50, sessenta: 60, setenta: 70, oitenta: 80, noventa: 90, cem: 100, cento: 100, duzentos: 200, trezentos: 300, quatrocentos: 400, quinhentos: 500, seiscentos: 600, setecentos: 700, oitocentos: 800, novecentos: 900, mil: 1000 };
+function numerosDaFala(t) {
+  const out = (t.match(/\d+/g) || []).map(Number);
+  let acc = 0, tem = false;
+  t.split(/\s+/).forEach(w => { if (NUM_FALADO[w] != null) { acc += NUM_FALADO[w]; tem = true; } else if (w !== "e" && tem) { out.push(acc); acc = 0; tem = false; } });
+  if (tem) out.push(acc);
+  return out;
+}
+function palavrasChave(t) { return norm(t).split(" ").filter(w => w.length > 1 && !PALAVRA_VAZIA.has(w) && !/^\d+$/.test(w) && NUM_FALADO[w] == null); }
+function pontuaParada(s, ws, nums) {
+  const alvo = palavrasChave([s.street, s.bairro, s.client, s.comp].join(" "));
+  let pts = 0, bate = 0;
+  ws.forEach(w => {
+    let melhor = 0;
+    alvo.forEach(a => { if (a === w) melhor = Math.max(melhor, 1); else if (w.length >= 4 && a.length >= 4 && (a.startsWith(w) || w.startsWith(a))) melhor = Math.max(melhor, .85); else if (w.length >= 4 && lev(a, w) <= (w.length >= 7 ? 2 : 1)) melhor = Math.max(melhor, .75); });
+    if (melhor) bate++; pts += melhor;
+  });
+  if (!ws.length) pts = 0;
+  const num = String(s.num || "").match(/\d+/); if (num && nums.includes(+num[0])) pts += 1.2;
+  if (s.code && ws.some(w => norm(s.code).includes(w))) pts += 1.5;
+  const nStop = stopNumber(s); if (/\bparada\b/.test(ws.__frase || "") && nums.includes(nStop)) pts += 2;
+  const perto = ondeEstou && hasGeo(s) ? hav(ondeEstou, s) : null; if (perto != null) pts += Math.max(0, .4 - perto * .08); // empate: a mais perto de onde a pessoa está
+  return { s, pts, cobertura: ws.length ? bate / ws.length : 0 };
+}
+function acharParadaFalada(frases) {
+  const lista = Array.isArray(frases) ? frases : [frases];
+  let todos = [];
+  lista.forEach((f, k) => {
+    const t = norm(f), ws = palavrasChave(t); ws.__frase = t; const nums = numerosDaFala(t);
+    // "parada 12" direto
+    const mP = t.match(/\bparada (\d+)\b/); if (mP) { const s = st.stops[+mP[1] - 1]; if (s && s.status === "pending") todos.push({ s, pts: 9, cobertura: 1 }); }
+    pending().forEach(s => { const r = pontuaParada(s, ws, nums); r.pts -= k * .05; todos.push(r); });
+  });
+  todos.sort((a, b) => b.pts - a.pts);
+  const vistos = new Set(); todos = todos.filter(r => !vistos.has(r.s.id) && vistos.add(r.s.id));
+  const [a, b] = todos;
+  if (!a || a.pts < 1 || a.cobertura < .5) return { achou: null, opcoes: todos.filter(r => r.pts >= .8).slice(0, 3) };
+  if (b && a.pts - b.pts < .35) return { achou: null, opcoes: todos.slice(0, 3) };
+  return { achou: a.s };
+}
+function irParaParada(s, porVoz) {
+  const p = pending(); const atual = p[0];
+  if (atual && atual !== s) { st.stops.splice(st.stops.indexOf(s), 1); st.stops.splice(st.stops.indexOf(atual), 0, s); }
+  st.started = true; save(); go("rota"); renderAll(false);
+  if (porVoz) speak(`Indo para a parada ${stopNumber(s)}, ${s.street}, ${spokenNum(s.num)}.`, true);
+  if (NV.on) { NV.alvo = s; NV.rota = null; NV.prox = 1; NV.chegou = false; NV.ultRecalc = 0; $("#nfDest").textContent = `Parada ${stopNumber(s)} · ${addrLine(s)}`; }
+}
+function escolherParadaSheet(ops, frase) {
+  sheet(`<h3>Qual destas?</h3><p class="sub">Você falou: "${esc(frase)}"</p>
+    <div class="reasons">${ops.map(r => `<button data-vaipara="${r.s.id}"><b>Parada ${stopNumber(r.s)} · ${esc(addrLine(r.s))}</b><br><span class="sub">${esc([r.s.comp, r.s.bairro, r.s.client].filter(Boolean).join(" · ") || "")}${ondeEstou && hasGeo(r.s) ? " · " + km1(hav(ondeEstou, r.s)) + " km daqui" : ""}</span></button>`).join("")}</div>
+    <button class="btn ghost" data-close style="width:100%;margin-top:10px">Nenhuma</button>`, bg => {
+    bg.querySelectorAll("[data-vaipara]").forEach(b => b.addEventListener("click", () => { closeSheet(); irParaParada(byId(b.dataset.vaipara), true); }));
+  });
+  speak("Achei mais de uma. Toque na certa.", true);
+}
 /* ===================== exemplo ===================== */
+
 function loadSample() {
   const S = [
     ["Rua Pernambuco", "1000", "Apto 501", "Mariana S.", "(31) 98123-4410", -19.9362, -43.9334, "", "Prédio de vidro"],
@@ -1253,6 +1445,8 @@ const COMMANDS = [
   ["não entreguei / ninguém em casa", "Registra cliente ausente"],
   ["endereço não encontrado / recusou", "Registra o motivo"],
   ["qual a próxima / repetir", "Fala a próxima entrega"],
+  ["ir para rua tal, 170 / vou na casa da Maria", "Acha a parada na rota (mesmo falando errado) e vai para ela"],
+  ["navegar aqui / sair da navegação", "Liga ou desliga a tela de perto com as curvas"],
   ["navegar / abrir Waze / Google Maps", "Abre a navegação"],
   ["ligar / mandar mensagem", "Liga ou abre o WhatsApp do cliente"],
   ["pular", "Joga a parada para o fim"],
@@ -1275,8 +1469,8 @@ function quickFail(reason) {
   s.status = "failed"; s.reason = reason; s.doneAt = Date.now(); stampWhere(s); save(); renderAll(false); beep(false);
   sayNext(`Registrado: ${reason}. `);
 }
-function handleCommand(raw) {
-  const t = norm(raw); const s = pending()[0];
+function handleCommand(raw, alts) {
+  const t = norm(raw); const s = pending()[0]; alts = alts && alts.length ? alts : [raw];
   vb("Entendi", `"${raw}"`);
   const has = (...w) => w.some(x => t.includes(x));
   if (has("socorro", "emergencia", "sos", "ajuda urgente")) { sosSheet(); return sendSos(); }
@@ -1301,10 +1495,20 @@ function handleCommand(raw) {
   if (has("pular", "pula", "depois")) { if (!s) return speak("Não há entrega pendente."); st.stops.splice(st.stops.indexOf(s), 1); st.stops.push(s); save(); renderAll(false); return sayNext("Pulei. "); }
   if (has("otimiz", "organiza")) { optimize(); return sayNext("Rota otimizada. "); }
   if (has("bipar", "escanear", "ler codigo", "qr")) { openScanner("find"); return speak("Abrindo o leitor.", true); }
+  if (has("sair da navegacao", "parar navegacao", "parar de navegar", "fechar navegacao")) { pararNavApp(true); return speak("Navegação desligada.", true); }
+  if (has("navegar aqui", "navegacao do app", "navegar no app", "tela de perto", "aproxima", "aproximar")) { if (!s) return speak("Não há entrega pendente."); iniciarNavApp(); return speak(`Navegando até a parada ${stopNumber(s)}.`, true); }
+  const IR = /\b(ir para|ir pra|ir pro|ir na|ir no|vou para|vou pra|vou pro|vou na|vou no|vamos para|vamos pra|me leva|me leve|leva pra|leva para|leva pro|bora pra|bora pro|partiu|fazer a|fazer o|faz a|faz o|entregar na|entregar no|entregar para|entregar pro|agora e|proxima e|primeiro na|primeiro no|passar na|passar no)\b/;
+  if (IR.test(t) && !/^(adicionar|adiciona|nova parada|novo endereco|anota|anotar)\b/.test(t)) {
+    const r = acharParadaFalada(alts);
+    if (r.achou) { irParaParada(r.achou, true); if (!NV.on && st.settings.nav === "app") iniciarNavApp(r.achou); return; }
+    if (r.opcoes && r.opcoes.length) return escolherParadaSheet(r.opcoes, raw);
+    if (!has("waze", "google", "navegar", "navega")) return speak("Não achei essa parada na rota. Para incluir, diga: adicionar rua tal, número tal.", true);
+  }
   if (has("waze", "google maps", "navegar", "navega", "ir para", "rota para", "me leva")) {
     if (!s) return speak("Não há entrega pendente.");
-    const L2 = navLinks(s); const g = t.includes("google") || (!t.includes("waze") && st.settings.nav === "google");
-    speak(`Abrindo ${g ? "Google Maps" : "Waze"}.`); return openUrl(g ? L2.gmaps : L2.waze);
+    if (!t.includes("google") && !t.includes("waze") && st.settings.nav === "app") { iniciarNavApp(); return speak(`Navegando até a parada ${stopNumber(s)}.`, true); }
+    const L2 = navLinks(s, true); const g = t.includes("google") || (!t.includes("waze") && st.settings.nav !== "waze");
+    speak(`Abrindo ${g ? "Google Maps" : "Waze"}.`); return openUrl(g ? (L2.gmapsMulti || L2.gmaps) : L2.waze);
   }
   if (has("ligar", "liga pro", "liga para", "chamar")) { if (!s || !digits(s.phone)) return speak("Essa parada não tem telefone."); return openUrl("tel:" + digits(s.phone)); }
   if (has("mensagem", "whatsapp", "zap", "avisar")) {
@@ -1324,7 +1528,8 @@ function handleCommand(raw) {
   if (has("proxima", "repet", "onde", "qual", "endereco")) return sayNext();
   if (has("comandos", "o que posso falar")) { helpSheet(); return speak("Estes são os comandos.", true); }
   if (/^(como|onde|o que|ajuda|duvida|qual)\b/.test(t)) { helpSheet2(raw); const r = helpSearch(raw)[0]; return speak(r ? r.a.replace(/<[^>]+>/g, "") : "Não achei. Veja os temas na tela.", true); }
-  vb("Não entendi", `"${raw}". Toque em Ver comandos.`); speak("Não entendi. Tente: entregue, próxima, navegar ou ajuda.");
+  { const r = acharParadaFalada(alts); if (r.achou) return irParaParada(r.achou, true); if (r.opcoes && r.opcoes.length >= 2 && r.opcoes[0].pts >= 1.5) return escolherParadaSheet(r.opcoes, raw); }
+  vb("Não entendi", `"${raw}". Toque em Ver comandos.`); speak("Não entendi. Tente: entregue, próxima, ir para rua tal, navegar ou ajuda.");
 }
 let rec = null, listening = false, handsFree = false, speaking = false, vbT;
 function vb(title, text, keep) {
@@ -1341,14 +1546,14 @@ function listen() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { vb("Voz indisponível", "Use o Chrome no Android ou o Edge/Chrome no Windows."); handsFree = false; return; }
   if (listening || speaking) return;
-  rec = new SR(); rec.lang = "pt-BR"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
-  let finalText = "";
+  rec = new SR(); rec.lang = "pt-BR"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 5;
+  let finalText = "", alts = [];
   rec.onstart = () => { listening = true; $("#voiceFab").classList.add("on"); vb("Ouvindo...", handsFree ? "Mãos livres: fale um comando" : "Diga um comando, por exemplo \"entregue\"", true); };
-  rec.onresult = e => { const r = e.results[e.results.length - 1]; $("#vbText").textContent = `"${r[0].transcript}"`; if (r.isFinal) finalText = r[0].transcript; };
+  rec.onresult = e => { const r = e.results[e.results.length - 1]; $("#vbText").textContent = `"${r[0].transcript}"`; if (r.isFinal) { finalText = r[0].transcript; alts = Array.from(r).map(x => x.transcript); } };
   rec.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { setHandsFree(false); vb("Microfone bloqueado", "Libere o microfone para o DeliveRota nas permissões do navegador."); } };
   rec.onend = () => {
     listening = false; $("#voiceFab").classList.remove("on");
-    if (finalText) handleCommand(finalText); else if (!handsFree) $("#vbubble").hidden = true;
+    if (finalText) handleCommand(finalText, alts); else if (!handsFree) $("#vbubble").hidden = true;
     if (handsFree && !speaking) setTimeout(listen, 300);
   };
   try { rec.start(); } catch (e) { listening = false; }
@@ -2126,7 +2331,8 @@ document.addEventListener("click", e => {
   if (d.act === "addmore") { st.ultimaAdicao = 0; save(); go("add"); }
   if (d.act === "cancelroute") cancelarRota(t);
   if (d.act === "desistir") desistirEComecar();
-  if (d.navset) { st.settings.nav = d.navset; st.navAsked = Date.now(); save(); renderNext(); toast("Navegação pelo " + (d.navset === "waze" ? "Waze" : "Google Maps")); }
+  if (d.navset) { st.settings.nav = d.navset; st.navAsked = Date.now(); save(); renderNext(); toast("Navegação pelo " + ({ waze: "Waze", app: "DeliveRota" }[d.navset] || "Google Maps")); if (d.navset === "app" && rotaComecou() && !NV.on) iniciarNavApp(); }
+  if (d.act === "navapp") { if (NV.on) { NV.solto = false; if (NV.eu && map) map.setView([NV.eu.lat, NV.eu.lng], 18); } else iniciarNavApp(); }
   if (d.junto) { const x = byId(d.junto), a = pending()[0]; if (x && a) { st.stops.splice(st.stops.indexOf(x), 1); st.stops.splice(st.stops.indexOf(a) + 1, 0, x); save(); renderAll(false); toast("Parada " + stopNumber(x) + " vem logo depois desta"); } }
   if (d.act === "impgo") confirmImport({ fica: true });
   if (d.act === "impstart") { if (confirmImport({ fica: true })) comecarRota(); }
@@ -2310,5 +2516,5 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
 })();
 
 // para testes automáticos
-window.DeliveRota = { refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
+window.DeliveRota = { acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
 })();
