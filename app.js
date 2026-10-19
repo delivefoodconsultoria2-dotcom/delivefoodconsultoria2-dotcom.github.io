@@ -73,34 +73,79 @@ const pending = () => st.stops.filter(s => s.status === "pending");
 function routeKm(list, from) { let k = 0, p = from || st.start; list.filter(hasGeo).forEach(s => { if (p) k += hav(p, s); p = s; }); return k; }
 function lastPoint() { const d = st.stops.filter(s => s.status !== "pending" && hasGeo(s)); return d.length ? d[d.length - 1] : st.start; }
 
-function optimize() {
+/* ordena as paradas: prioridade/horário primeiro, depois vizinho mais próximo + 2-opt/or-opt.
+   d(a,b) = custo entre dois pontos (linha reta ou tempo real pelas ruas) */
+function ordenar(geo, anchor, d) {
+  const rank = s => s.prio ? 0 : s.win === "Até 12:00" ? 1 : s.win === "Depois das 15:00" ? 3 : 2;
+  let out = [];
+  [0, 1, 2, 3].forEach(r => {
+    let group = geo.filter(s => rank(s) === r); if (!group.length) return;
+    let cur = out.length ? out[out.length - 1] : anchor, seq = [];
+    while (group.length) { group.sort((x, y) => d(cur, x) - d(cur, y)); cur = group.shift(); seq.push(cur); }
+    const startPt = out.length ? out[out.length - 1] : anchor;
+    const endPt = (r === 3 || !geo.some(s => rank(s) > r)) && st.settings.roundTrip ? st.start : null;
+    seq = twoOpt(seq, startPt, endPt, d);
+    out = out.concat(seq);
+  });
+  return out;
+}
+const dReta = (a, b) => (a && b) ? hav(a, b) : 0;
+function optimize(opts = {}) {
   const done = st.stops.filter(s => s.status !== "pending");
   const pend = pending();
   const geo = pend.filter(hasGeo), noGeo = pend.filter(s => !hasGeo(s));
   if (geo.length < 2) { toast(noGeo.length ? "Algumas paradas ainda estão sem localização" : "Adicione pelo menos 2 paradas"); return; }
   const before = routeKm(geo, lastPoint());
-  const rank = s => s.prio ? 0 : s.win === "Até 12:00" ? 1 : s.win === "Depois das 15:00" ? 3 : 2;
-  let out = [], anchor = lastPoint() || geo[0];
-  [0, 1, 2, 3].forEach(r => {
-    let group = geo.filter(s => rank(s) === r); if (!group.length) return;
-    let cur = out.length ? out[out.length - 1] : anchor, seq = [];
-    while (group.length) { group.sort((a, b) => hav(cur, a) - hav(cur, b)); cur = group.shift(); seq.push(cur); }
-    const startPt = out.length ? out[out.length - 1] : anchor;
-    const endPt = (r === 3 || !geo.some(s => rank(s) > r)) && st.settings.roundTrip ? st.start : null;
-    seq = twoOpt(seq, startPt, endPt);
-    out = out.concat(seq);
-  });
+  const anchor = lastPoint() || geo[0];
+  const out = ordenar(geo, anchor, dReta);
   const after = routeKm(out, lastPoint());
   st.stops = done.concat(out, noGeo); markStart();
   save(); renderAll(true);
   const saved = before - after;
-  toast(saved > 0.05 ? `Rota otimizada: ${km1(saved)} km a menos` : "Rota organizada na melhor ordem");
+  if (!opts.quieto) toast(saved > 0.05 ? `Rota otimizada: ${km1(saved)} km a menos` : "Rota organizada na melhor ordem");
+  refinarPelasRuas();
 }
-function twoOpt(seq, startPt, endPt) {
+/* ajuste fino: usa o tempo real de percurso pelas ruas (mão única, retornos) */
+let refinoN = 0; const matrizCache = new Map();
+async function refinarPelasRuas() {
+  const meu = ++refinoN;
+  if (!navigator.onLine) return "offline";
+  const geo = pending().filter(hasGeo); if (geo.length < 3) return "poucas";
+  const anchor = lastPoint() || geo[0];
+  const pts = anchor === geo[0] ? geo.slice() : [anchor, ...geo];
+  if (st.settings.roundTrip && st.start && !pts.includes(st.start)) pts.push(st.start);
+  if (pts.length > 100) return "muitas"; // serviço gratuito aceita até 100 pontos por vez
+  const chave = pts.map(p => p.lat.toFixed(5) + "," + p.lng.toFixed(5)).join(";");
+  let dur = matrizCache.get(chave);
+  if (!dur) {
+    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 9000);
+    try {
+      const coords = pts.map(p => p.lng.toFixed(6) + "," + p.lat.toFixed(6)).join(";");
+      const r = await fetch(`https://router.project-osrm.org/table/v1/driving/${coords}?annotations=duration`, { signal: ctl.signal });
+      const j = await r.json(); if (j.code !== "Ok" || !j.durations) return "erro";
+      dur = j.durations; matrizCache.set(chave, dur);
+    } catch (e) { return "falhou"; } finally { clearTimeout(to); }
+  }
+  if (meu !== refinoN) return "mudou"; // a rota mudou enquanto esperava
+  const idx = new Map(pts.map((p, i) => [p, i]));
+  const d = (a, b) => { if (!a || !b) return 0; const i = idx.get(a), k = idx.get(b); if (i == null || k == null) return hav(a, b) * 120; const v = dur[i][k]; return v == null ? hav(a, b) * 120 : v; };
+  const custo = seq => { let t = 0, c = anchor; seq.forEach(s => { t += d(c, s); c = s; }); return t; };
+  const atual = pending().filter(hasGeo);
+  if (atual.length !== geo.length || atual.some(s => !idx.has(s))) return "diferente";
+  const antes = custo(atual);
+  const melhor = ordenar(atual.slice(), anchor, d);
+  const depois = custo(melhor);
+  if (depois < antes - 30) { // só troca se ganhar pelo menos meio minuto
+    const done = st.stops.filter(s => s.status !== "pending"), noGeo = pending().filter(s => !hasGeo(s));
+    st.stops = done.concat(melhor, noGeo); markStart(); save(); renderAll(false);
+    toast(`Ajustada pelas ruas: ~${Math.max(1, Math.round((antes - depois) / 60))} min a menos`, 3500);
+  }
+  st.ruas = true; save(); return { antes, depois };
+}
+function twoOpt(seq, startPt, endPt, d = dReta) {
   // 2-opt + or-opt: aguenta rotas de 100+ paradas em menos de 1 segundo
   const n = seq.length; if (n < 3) return seq;
   const P = i => i < 0 ? startPt : i >= n ? endPt : seq[i];
-  const d = (a, b) => (a && b) ? hav(a, b) : 0;
   let improved = true, passes = 0;
   const t0 = Date.now();
   while (improved && passes++ < 400 && Date.now() - t0 < 2500) {
@@ -426,11 +471,11 @@ function fetchRoad(path, key) {
     try {
       const chunks = []; for (let i = 0; i < path.length - 1; i += 24) chunks.push(path.slice(i, i + 25));
       let line = [], dist = 0;
-      for (const c of chunks) {
-        const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${c.map(p => p[1] + "," + p[0]).join(";")}?overview=full&geometries=geojson`);
-        const j = await r.json(); if (!j.routes || !j.routes[0]) throw 0;
-        line = line.concat(j.routes[0].geometry.coordinates.map(c2 => [c2[1], c2[0]])); dist += j.routes[0].distance;
-      }
+      const partes = await Promise.all(chunks.map(async c => {
+        const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${c.map(p => p[1] + "," + p[0]).join(";")}?overview=simplified&geometries=geojson`);
+        const j = await r.json(); if (!j.routes || !j.routes[0]) throw 0; return j.routes[0];
+      }));
+      partes.forEach(rt => { line = line.concat(rt.geometry.coordinates.map(c2 => [c2[1], c2[0]])); dist += rt.distance; });
       osrmLine = line; osrmKey = key; osrmKm = dist / 1000; drawMap(false); renderStats();
     } catch (e) { /* sem internet ou serviço indisponível: fica a linha reta */ }
   }, 700);
@@ -538,7 +583,7 @@ function autoOtimizar() {
     const p = pending();
     if (rotaComecou() || p.some(x => x.geo === "busy") || p.filter(hasGeo).length < 2) { if (p.length) renderAll(false); return; }
     optimize(); st.otimizada = true; save(); renderNext();
-  }, 400);
+  }, 250);
 }
 function comecarRota() {
   const p = pending(); if (!p.length) return;
@@ -2173,5 +2218,5 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
 })();
 
 // para testes automáticos
-window.DeliveRota = { limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
+window.DeliveRota = { refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
 })();
