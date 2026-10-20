@@ -584,7 +584,7 @@ async function baseMapa() {
     window.gm_authFailure = () => { voltaOSM(); console.warn("Chave do Google Maps recusada"); };
     if (!(window.google && google.maps)) await new Promise((ok, erro) => { window.__gmPronto = ok; carregaScript(`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(GKEY)}&language=pt-BR&region=BR&loading=async&callback=__gmPronto`).catch(erro); setTimeout(() => erro(new Error("tempo")), 15000); });
     if (!L.gridLayer.googleMutant) await carregaScript("vendor/googlemutant.js");
-    gBase = L.gridLayer.googleMutant({ type: "roadmap", maxZoom: 21, styles: [{ featureType: "poi.business", stylers: [{ visibility: "off" }] }, { featureType: "transit", elementType: "labels.icon", stylers: [{ visibility: "off" }] }] });
+    gBase = L.gridLayer.googleMutant({ type: "roadmap", maxZoom: 20, maxNativeZoom: 19, styles: [{ featureType: "poi.business", stylers: [{ visibility: "off" }] }, { featureType: "transit", elementType: "labels.icon", stylers: [{ visibility: "off" }] }] });
     gBase.addTo(map); mapaGoogle = true; document.body.classList.add("gmapa");
     setTimeout(() => { if (mapaGoogle && map.hasLayer(osmBase)) map.removeLayer(osmBase); }, 1500);
   } catch (e) { voltaOSM(); }
@@ -610,7 +610,7 @@ function icon(cls, txt) { return L.divIcon({ className: "", html: `<div class="p
 /* navegando: nada de nome em cima de nome — mostra primeiro a parada atual e as próximas da rota,
    e esconde o rótulo que bateria em outro já mostrado; longe (zoom baixo) só a parada atual */
 function limpaRotulos() {
-  if (!map) return;
+  if (!map || document.body.classList.contains("mapgest")) return;
   const z = map.getZoom(), tts = [];
   layer.eachLayer(l => { if (l.__ordem != null && l.getTooltip && l.getTooltip()) tts.push(l); });
   tts.sort((a, b) => a.__ordem - b.__ordem);
@@ -634,7 +634,7 @@ function limpaRotulos() {
     if (bate && l.__ordem !== -1) el.style.visibility = "hidden"; else ocup.push(r);
   });
 }
-let limpaT = null; function limpaDepois() { clearTimeout(limpaT); limpaT = setTimeout(limpaRotulos, 60); }
+let limpaT = null; function limpaDepois() { clearTimeout(limpaT); limpaT = setTimeout(limpaRotulos, 140); }
 function drawMap(fit) {
   if (!map) return;
   layer.clearLayers();
@@ -649,7 +649,8 @@ function drawMap(fit) {
     const ehAlvo = NV.on && NV.alvo === s;
     const mk = L.marker([s.lat, s.lng], { icon: icon((ehAlvo ? "next" : (NV.on && cls === "next" ? "" : cls)) + gCls(s), s.status === "delivered" ? "✓" : n), zIndexOffset: ehAlvo ? 1500 : (cls === "next" ? 1000 : 0) })
       .on("click", () => NV.on ? navParadaSheet(s) : stopSheet(s)).addTo(layer);
-    if (NV.on && s.status === "pending") { const vs = textoVer(s, pvMapa || (pvMapa = previsao()), 4, !ehAlvo); mk.__ordem = ehAlvo ? -1 : pend.indexOf(s); if (vs.length) mk.bindTooltip(`<b>${esc(vs[0])}</b>${vs.length > 1 ? `<em>${vs.slice(1).map(esc).join(" · ")}</em>` : ""}`, { permanent: true, direction: "right", offset: [16, 0], className: "navlbl" + (ehAlvo ? " alvo" : "") }); }
+    if (NV.on && s.status === "pending") { const oi = pend.indexOf(s); mk.__ordem = ehAlvo ? -1 : oi;
+      if (ehAlvo || oi < 14) { const vs = textoVer(s, pvMapa || (pvMapa = previsao()), 4, !ehAlvo); if (vs.length) mk.bindTooltip(`<b>${esc(vs[0])}</b>${vs.length > 1 ? `<em>${vs.slice(1).map(esc).join(" · ")}</em>` : ""}`, { permanent: true, direction: "right", offset: [16, 0], className: "navlbl" + (ehAlvo ? " alvo" : "") }); } }
     pts.push([s.lat, s.lng]);
   });
   const path = [lastPoint(), ...pend, pend.length ? fimPt() : null].filter(p => p && p.lat != null).map(p => [p.lat, p.lng]);
@@ -664,7 +665,10 @@ function drawMap(fit) {
     pend.filter(x => hasGeo(x) && x.bairro).forEach(x => { const k = norm(x.bairro); if (!bairros.has(k)) bairros.set(k, { nome: x.bairro, la: 0, lo: 0, n: 0 }); const b = bairros.get(k); b.la += x.lat; b.lo += x.lng; b.n++; });
     bairros.forEach(b => { const m2 = L.marker([b.la / b.n, b.lo / b.n], { icon: L.divIcon({ className: "", html: `<div class="bairrolbl">${esc(b.nome)}<small>${b.n} parada${b.n > 1 ? "s" : ""}</small></div>`, iconSize: [0, 0] }), interactive: false, zIndexOffset: -500, keyboard: false }); m2.__bairro = b.n; m2.addTo(layer); });
   }
-  if (!map.__limpa) { map.__limpa = 1; map.on("zoomend moveend", limpaDepois); } limpaDepois();
+  if (!map.__limpa) { map.__limpa = 1;
+    map.on("zoomstart movestart", () => { document.body.classList.add("mapgest"); });
+    map.on("zoomend moveend", () => { document.body.classList.remove("mapgest"); limpaDepois(); });
+  } limpaDepois();
 }
 let roadT;
 function fetchRoad(path, key) {
@@ -744,6 +748,7 @@ function renderNext0() {
     box.innerHTML = `<div class="cta-box">
       <h3>Rota de hoje</h3><p>Bipe os pacotes, mande a foto da etiqueta, a planilha ou a lista do WhatsApp.</p>
       <button class="btn primary cta" data-go="add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>CARREGAR ROTA</button>
+      <button class="setup-row" data-act="inifim" style="margin-top:12px"><span class="su-ic">🏁</span><b>Início e fim</b><em>${st.start || st.end || (st.settings.roundTrip && st.start) ? `${esc(nomePonto(st.start, "onde sai"))} → ${esc(st.end ? nomePonto(st.end) : (st.settings.roundTrip && st.start ? "volta ao início" : "última entrega"))}` : "defina de onde sai e o destino (casa, galpão)"}</em><i class="su-go">›</i></button>
       <div class="cta-links"><button class="link-btn" data-act="sample">Testar com uma rota de exemplo</button><button class="link-btn" data-act="help">Tirar dúvidas</button></div></div>`;
     return;
   }
@@ -2037,8 +2042,10 @@ function criarRotaSheet() {
       <button aria-pressed="false" data-d="outro"><b>Escolher data</b></button></div>
       <input id="crOutra" type="date" min="${hoje}" hidden style="margin-top:8px"></div>
     <label class="check"><input type="checkbox" id="crReusar"> Reutilizar paradas anteriores</label>
+    <button class="setup-row" id="crInifim" type="button" style="margin-top:4px"><span class="su-ic">🏁</span><b>Início e fim</b><em>${st.start || st.end || (st.settings.roundTrip && st.start) ? `${esc(nomePonto(st.start, "onde sai"))} → ${esc(st.end ? nomePonto(st.end) : (st.settings.roundTrip && st.start ? "volta ao início" : "última entrega"))}` : "defina de onde sai e o destino (casa, galpão)"}</em><i class="su-go">›</i></button>
     ${st.stops.some(s => s.status === "pending") ? `<p class="hint" id="crAviso">Você tem uma rota em andamento. ${"Se a nova for para hoje, a atual é guardada em Rotas salvas."}</p>` : ""}
     <button class="btn primary big" id="crGo">Confirmar</button>`, () => {
+    $("#crInifim").addEventListener("click", () => { closeSheet(); inicioFimSheet(() => criarRotaSheet()); });
     $$("#crData button").forEach(b => b.addEventListener("click", () => {
       $$("#crData button").forEach(x => x.setAttribute("aria-pressed", x === b));
       $("#crOutra").hidden = b.dataset.d !== "outro"; quando = b.dataset.d === "outro" ? ($("#crOutra").value || "") : b.dataset.d;

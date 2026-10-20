@@ -828,3 +828,10 @@ body.navon .navver{display:grid;place-items:center;position:absolute;right:12px;
 .setup-mini{display:flex;align-items:center;gap:8px;width:100%;margin:2px 0 8px;padding:8px 12px;border:1px dashed color-mix(in srgb,var(--green) 35%,var(--line));border-radius:12px;background:none;color:var(--muted);font:inherit;font-size:12.5px;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .setup-mini b{color:var(--ink);font-weight:700;overflow:hidden;text-overflow:ellipsis}
 .setup-mini i{margin-left:auto;font-style:normal;color:var(--green-strong);font-size:18px}
+
+/* mapa mais fluido: sem flash preto ao dar zoom e rótulos escondidos durante o gesto */
+.leaflet-container{background:#e8edef}
+:root[data-theme="dark"] .leaflet-container{background:#1b2430}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .leaflet-container{background:#1b2430}}
+body.mapgest .leaflet-tooltip.navlbl,body.mapgest .bairrolbl{visibility:hidden!important}
+.leaflet-tooltip.navlbl,.bairrolbl{transition:none}
