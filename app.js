@@ -891,7 +891,9 @@ function comecarRota({ abrirNav = true } = {}) {
   // ainda achando endereço no mapa: começa sozinho quando terminar
   if (p.some(x => x.geo === "busy")) { st.queroComecar = true; save(); go("rota"); renderNext(); toast("Terminando de achar os endereços. A rota começa sozinha."); return; }
   st.queroComecar = false;
-  if (!st.otimizada && p.filter(hasGeo).length >= 2) optimize();
+  // começar a rota NUNCA pode embaralhar a ordem da lista (Shopee): só otimiza se o entregador pediu otimização
+  if (st.ordemPlanilha && temLista()) ordemDaPlanilha({ quieto: true });
+  else if (!st.otimizada && p.filter(hasGeo).length >= 2) optimize();
   st.started = true; st.otimizada = true; save(); go("rota"); renderAll(true);
   const s = pending()[0]; if (!s) return;
   toast("Rota começou. Boa entrega!");
