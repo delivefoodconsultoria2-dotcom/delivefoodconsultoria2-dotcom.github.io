@@ -728,3 +728,48 @@ body.navon .navver{display:grid;place-items:center;position:absolute;right:12px;
 .badge-col{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none}
 .badge-col .eta{font-style:normal;font-size:11px;color:var(--muted);font-weight:800}
 .naopaga{color:#B54708;font-weight:800}
+
+/* ===== cartão da entrega: visual tecnológico, botões menores e mais opções à vista ===== */
+.next{position:relative;overflow:hidden;border-radius:22px;padding:14px;
+  background:radial-gradient(120% 80% at 100% 0%,color-mix(in srgb,var(--green) 16%,transparent),transparent 60%),
+             linear-gradient(160deg,color-mix(in srgb,var(--green) 7%,var(--surface)),var(--surface));
+  outline:1px solid color-mix(in srgb,var(--green) 45%,var(--line));box-shadow:0 0 0 1px color-mix(in srgb,var(--green) 12%,transparent) inset,0 18px 40px -26px color-mix(in srgb,var(--green) 70%,#000)}
+.next::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.35;
+  background-image:linear-gradient(color-mix(in srgb,var(--green) 14%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--green) 14%,transparent) 1px,transparent 1px);
+  background-size:22px 22px;mask-image:linear-gradient(180deg,#000,transparent 55%);-webkit-mask-image:linear-gradient(180deg,#000,transparent 55%)}
+.next>*{position:relative}
+.next-num{width:46px;height:46px;border-radius:14px;font-size:21px;font-variant-numeric:tabular-nums;
+  background:linear-gradient(145deg,#2BD66F,var(--green));box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 22%,transparent),0 0 22px -2px color-mix(in srgb,#2BD66F 75%,transparent)}
+.next-lbl span{display:flex;align-items:center;gap:6px;letter-spacing:.12em}
+.next-lbl span::before{content:"";width:7px;height:7px;border-radius:50%;background:#2BD66F;box-shadow:0 0 8px #2BD66F;animation:pulse 1.6s infinite}
+.next-lbl em{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;letter-spacing:.01em}
+.next .addr{font-size:21px;margin:10px 0 2px}
+.next .facts{margin:8px 0}
+.next .fact{font-size:12px;padding:4px 8px;border-radius:8px;background:color-mix(in srgb,var(--green) 8%,var(--surface-2));border-color:color-mix(in srgb,var(--green) 25%,var(--line))}
+.next .fact.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em}
+.stack.tec{gap:8px}
+.stack.tec .navsw{margin:6px 0 2px;gap:4px;font-size:12px;flex-wrap:nowrap}
+.stack.tec .navsw span{margin-right:4px;text-transform:uppercase;letter-spacing:.08em;font-size:11px}
+.stack.tec .navsw button{padding:5px 11px;font-size:12.5px;min-height:30px;background:color-mix(in srgb,var(--surface-2) 80%,transparent)}
+.stack.tec .navsw button[aria-pressed="true"]{background:var(--green);border-color:var(--green);box-shadow:0 0 12px -3px color-mix(in srgb,#2BD66F 80%,transparent)}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:58px;padding:7px 4px;border-radius:14px;
+  border:1px solid color-mix(in srgb,var(--green) 22%,var(--line));background:color-mix(in srgb,var(--surface-2) 85%,transparent);color:var(--ink);font:inherit;text-decoration:none;cursor:pointer;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);transition:transform .12s,box-shadow .2s}
+.tile:active{transform:scale(.96)}
+.tile b{font-size:12.5px;font-weight:800;line-height:1.1;text-align:center}
+.tile small{font-size:10.5px;color:var(--muted);font-weight:700;line-height:1}
+.tile.go{grid-column:span 2;flex-direction:row;gap:9px;background:linear-gradient(135deg,#123B26,#0B2418);color:#E9FFF2;border-color:color-mix(in srgb,#2BD66F 55%,transparent);box-shadow:0 0 18px -8px #2BD66F inset}
+.tile.go b{font-size:15px}.tile.go small{color:#9FE7BF;display:block;margin-top:2px}
+.tile.go>span,.tile.go b+small{align-self:center}
+.tile.ok{grid-column:span 3;flex-direction:row;gap:9px;min-height:54px;background:linear-gradient(135deg,#2BD66F,var(--green));color:#fff;border-color:transparent;box-shadow:0 10px 26px -12px color-mix(in srgb,#2BD66F 90%,transparent),0 0 0 1px rgba(255,255,255,.18) inset}
+.tile.ok b{font-size:17px;letter-spacing:.02em}
+.tile.bad{color:var(--red);background:color-mix(in srgb,var(--red-soft) 70%,transparent);border-color:color-mix(in srgb,var(--red) 30%,var(--line))}
+.tile.bad b{font-size:11.5px}
+.minis{display:flex;gap:8px;margin-top:10px}
+.mini{flex:1;display:flex;align-items:center;justify-content:center;min-height:42px;padding:0 10px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-weight:800;font-size:13px;text-decoration:none;text-align:center;cursor:pointer}
+.mini.bad{color:var(--red);flex:0 0 auto;padding:0 14px}
+@media (max-width:360px){.tile b{font-size:11.5px}.tile.go b{font-size:14px}.stack.tec .navsw button{padding:5px 8px}}
+.tile .tl{display:flex;flex-direction:column;align-items:flex-start;text-align:left}
+.next .perto{padding:8px 10px}.next .perto-row{padding:2px 0}.next .perto .btn.sm{min-height:30px;padding:0 10px;font-size:12px}
+.next .perto .badge{width:26px;height:26px;font-size:12px}

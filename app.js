@@ -589,6 +589,7 @@ function initMap() {
   map = L.map("map", { zoomControl: false, attributionControl: true }).setView(REGION.center, REGION.zoom);
   baseMapa();
   layer = L.layerGroup().addTo(map);
+  map.on("dragstart", () => { map.__mexeu = Date.now(); });
   map.on("click", async e => {
     if (!pinMode) return;
     const { lat, lng } = e.latlng; const target = pinMode; setPinMode(null);
@@ -650,7 +651,7 @@ function drawMap(fit) {
   if (NV.on) { /* navegando: só a linha azul do caminho até a parada */ }
   else if (osrmLine && key === osrmKey) L.polyline(osrmLine, { color: "#18A957", weight: 5, opacity: .85 }).addTo(layer);
   else { if (path.length > 1) L.polyline(path, { color: "#18A957", weight: 4, opacity: .7, dashArray: "6 8" }).addTo(layer); fetchRoad(path, key); }
-  if (fit && pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 16 });
+  if (fit && pts.length) map.fitBounds(pts, { paddingTopLeft: [24, 76], paddingBottomRight: [24, 70], maxZoom: 16 });
   // nome de cada bairro da rota escrito no mapa (uma vez, no meio das paradas daquele bairro)
   if (verEscolhidos().includes("bairro")) {
     const bairros = new Map();
@@ -718,7 +719,13 @@ function ajustaFolha() {
     const alvo = Math.round(Math.min(nb.offsetHeight + 44, innerHeight * 0.5));
     document.body.style.setProperty("--folha", alvo + "px");
     if (map) try { map.invalidateSize({ pan: false }); } catch (e) {}
+    // o tamanho do mapa mudou: enquadra a rota de novo (se a pessoa não mexeu no mapa agora há pouco)
+    clearTimeout(ajustaFolha.t); ajustaFolha.t = setTimeout(() => { if (map && !NV.on && Date.now() - (map.__mexeu || 0) > 30000) enquadraRota(); }, 300);
   });
+}
+function enquadraRota() {
+  const pts = pending().filter(hasGeo).map(s => [s.lat, s.lng]); if (!pts.length) return;
+  try { map.invalidateSize({ pan: false }); map.fitBounds(pts, { paddingTopLeft: [24, 76], paddingBottomRight: [24, 70], maxZoom: 16 }); } catch (e) {}
 }
 function renderNext() { renderNext0(); ajustaFolha(); }
 function renderNext0() {
@@ -791,17 +798,18 @@ function renderNext0() {
     </div>
     ${addrNote(s) ? `<div class="note warnnote">${I.info}<span><b>Você anotou neste endereço:</b> ${esc(addrNote(s))}</span></div>` : ""}
     ${s.ref ? `<div class="note">${I.info}<span><b>Referência:</b> ${esc(s.ref)}</span></div>` : ""}
-    <div class="stack">
-      <div class="navsw" role="group" aria-label="App de navegação"><span>Navegar pelo</span><button data-navset="google" aria-pressed="${st.settings.nav !== "waze"}">Google Maps</button><button data-navset="waze" aria-pressed="${st.settings.nav === "waze"}">Waze</button><button data-navset="app" aria-pressed="${st.settings.nav === "app"}">No app</button></div>
-      <div class="actions">${viaApp ? `<button class="btn dark" data-act="navapp">${I.nav}<span class="navlbl">${NV.on ? "Navegando aqui no app" : "Navegar aqui no app"}<small>tela de perto, com cada curva</small></span></button>` : `<a class="btn dark" href="${L2[prefer[0]]}" target="_blank" rel="noopener">${I.nav}<span class="navlbl">Navegar no ${prefer[1]}${prefer[0] === "gmaps" && L2.multiN > 1 ? `<small>com as próximas ${L2.multiN} paradas no caminho</small>` : ""}</span></a>`}
-        <a class="btn ghost icon" href="${L2[prefer[2]]}" target="_blank" rel="noopener" title="Abrir no ${prefer[3]}" aria-label="Abrir no ${prefer[3]}">${I.alt}</a>
-        <button class="btn ghost icon" data-contact="${s.id}" title="Ligar ou mandar WhatsApp" aria-label="Contato do cliente">${I.phone}</button></div>
-      <button class="btn primary big" data-deliver="${s.id}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 4.5 4.5L19 7"/></svg>Entregue</button>
-      <div class="row"><button class="btn warn" data-fail="${s.id}">Não consegui entregar</button><button class="btn ghost" data-skip="${s.id}" style="flex:0 0 96px">Pular</button></div>
+    <div class="stack tec">
+      <div class="navsw" role="group" aria-label="App de navegação"><span>Navegar</span><button data-navset="app" aria-pressed="${st.settings.nav === "app"}">No app</button><button data-navset="google" aria-pressed="${st.settings.nav === "google"}">Google</button><button data-navset="waze" aria-pressed="${st.settings.nav === "waze"}">Waze</button></div>
+      <div class="tiles">
+        ${viaApp ? `<button class="tile go" data-act="navapp">${I.nav}<span class="tl"><b>${NV.on ? "Navegando" : "Navegar"}</b><small>aqui no app</small></span></button>` : `<a class="tile go" href="${L2[prefer[0]]}" target="_blank" rel="noopener">${I.nav}<span class="tl"><b>Navegar</b><small>no ${prefer[1]}${prefer[0] === "gmaps" && L2.multiN > 1 ? ` · +${L2.multiN} paradas` : ""}</small></span></a>`}
+        <button class="tile" data-contact="${s.id}" aria-label="Contato do cliente">${I.phone}<b>Contato</b></button>
+        <button class="tile" data-skip="${s.id}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 5l7 7-7 7M13 5l7 7-7 7"/></svg><b>Pular</b></button>
+        <button class="tile ok" data-deliver="${s.id}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 4.5 4.5L19 7"/></svg><b>Entregue</b></button>
+        <button class="tile bad" data-fail="${s.id}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg><b>Não entreguei</b></button>
+      </div>
     </div></div>
     ${later.length ? `<div class="later"><h3>A seguir</h3>${later.map(x => `<div class="later-row" data-open="${x.id}"><span class="badge${gCls(x)}">${stopNumber(x)}</span><div><b>${esc(addrLine(x))}</b><span>${esc([x.comp, x.bairro, x.client].filter(Boolean).join(" · ") || "—")}</span></div></div>`).join("")}</div>` : ""}
-    ${p.length > 1 ? `<a class="btn ghost" style="margin-top:12px" target="_blank" rel="noopener" href="${fullRouteLink()}">Abrir as próximas ${Math.min(p.length, 10)} paradas no Google Maps</a>` : ""}
-    <button class="btn warn" data-act="cancelroute" style="margin-top:12px;width:100%">Cancelar rota</button>`;
+    <div class="minis">${p.length > 1 ? `<a class="mini" target="_blank" rel="noopener" href="${fullRouteLink()}">Próximas ${Math.min(p.length, 10)} no Google Maps</a>` : ""}<button class="mini bad" data-act="cancelroute">Cancelar rota</button></div>`;
 }
 /* ---------- fluxo simples: carregar → otimizar sozinho → começar → cancelar ---------- */
 function rotaComecou() { return !!st.started || st.stops.some(s => s.status !== "pending"); }
