@@ -71,6 +71,47 @@ function hav(a, b) {
 }
 const hasGeo = s => s && s.lat != null && s.lng != null;
 const pending = () => st.stops.filter(s => s.status === "pending");
+/* ponto final da rota: outro endereço (ex.: casa) ou voltar ao início */
+function fimPt() { return (st.end && st.end.lat != null) ? st.end : (st.settings.roundTrip && st.start ? st.start : null); }
+const hhmm = t => new Date(t).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+/* previsão de horário de cada parada e do término (inclui a volta ao ponto final) */
+function previsao(list) {
+  list = (list || pending()).filter(hasGeo);
+  const v = SPEED[st.settings.vehicle] || 22, para = (st.settings.stopMin || 3) * 60000;
+  const reta = routeKm(list, lastPoint());
+  let fator = 1.35; if (osrmKm && reta > 0.3) fator = Math.min(2.2, Math.max(1.05, osrmKm / reta));
+  let p = (NV.on && NV.eu) ? NV.eu : (ondeEstou && Date.now() - ondeEstou.t < 20 * 60000 ? ondeEstou : lastPoint());
+  let t = Date.now(), km = 0; const itens = [];
+  list.forEach(s => { const d = p ? hav(p, s) * fator : 0; km += d; t += d / v * 3600000; itens.push({ s, t, km }); t += para; p = s; });
+  const fp = fimPt(); let kmFim = 0; if (fp && p) { kmFim = hav(p, fp) * fator; km += kmFim; t += kmFim / v * 3600000; }
+  return { itens, fim: t, km, volta: !!fp };
+}
+function nomePonto(x, vazio) { return x ? (x.label || "Endereço escolhido") : vazio; }
+function inicioFimSheet() {
+  const fimTxt = st.end ? nomePonto(st.end) : (st.settings.roundTrip && st.start ? "Voltar ao início" : "Termina na última entrega");
+  sheet(`<h3>Início e fim da rota</h3><p class="sub">O app organiza a ordem e calcula o horário de término contando a volta.</p>
+    <h4 class="cfg-h">Começo da rota</h4><div class="sub" style="margin-bottom:6px"><b>${esc(nomePonto(st.start, "Onde você estiver"))}</b></div>
+    <div class="row wrap"><button class="btn ghost sm" id="ifIniGps">Minha localização</button><button class="btn ghost sm" id="ifIniMapa">Escolher no mapa</button></div>
+    <div class="row" style="margin-top:6px"><input class="busca" id="ifIniTxt" placeholder="Ou digite o endereço de saída" style="margin:0;flex:1"><button class="btn primary sm" id="ifIniOk">OK</button></div>
+    <h4 class="cfg-h">Fim da rota</h4><div class="sub" style="margin-bottom:6px"><b>${esc(fimTxt)}</b></div>
+    <div class="row wrap"><button class="btn ghost sm" id="ifFimNao">Termina na última entrega</button><button class="btn ghost sm" id="ifFimIni">Voltar ao início</button><button class="btn ghost sm" id="ifFimGps">Minha localização</button><button class="btn ghost sm" id="ifFimMapa">Escolher no mapa</button></div>
+    <div class="row" style="margin-top:6px"><input class="busca" id="ifFimTxt" placeholder="Ou digite o endereço final (ex.: sua casa)" style="margin:0;flex:1"><button class="btn primary sm" id="ifFimOk">OK</button></div>
+    <button class="btn ghost" id="ifFecha" style="width:100%;margin-top:14px">Pronto</button>`, bg => {
+    const q = id => bg.querySelector(id);
+    const aplica = msg => { save(); if (pending().filter(hasGeo).length >= 2) optimize({ quieto: true }); else renderAll(true); toast(msg); inicioFimSheet(); };
+    const gps = cb => { if (!navigator.geolocation) return toast("Este aparelho não informa a localização"); toast("Buscando sua localização..."); navigator.geolocation.getCurrentPosition(p2 => { ondeEstou = { lat: p2.coords.latitude, lng: p2.coords.longitude, t: Date.now() }; cb({ lat: p2.coords.latitude, lng: p2.coords.longitude, label: "Minha localização" }); }, () => toast("Libere a permissão de localização."), { enableHighAccuracy: true, timeout: 15000 }); };
+    const busca = async (txt, cb) => { txt = (txt || "").trim(); if (!txt) return toast("Digite o endereço"); toast("Procurando o endereço..."); const a = parseAddressLine(txt) || {}; const g = await photon({ street: a.street || txt, num: a.num || "", bairro: a.bairro || "", city: st.settings.city }) || await nominatim({ q: txt + ", " + (st.settings.city || "").split(" - ")[0] }); if (!g) return toast("Não achei esse endereço. Tente com o número e o bairro."); cb({ lat: g.lat, lng: g.lng, label: txt }); };
+    q("#ifIniGps").addEventListener("click", () => gps(x => { st.start = x; aplica("Início: sua localização"); }));
+    q("#ifIniMapa").addEventListener("click", () => { closeSheet(); go("rota"); setPinMode("start"); });
+    q("#ifIniOk").addEventListener("click", () => busca(q("#ifIniTxt").value, x => { st.start = x; aplica("Início definido"); }));
+    q("#ifFimNao").addEventListener("click", () => { st.end = null; st.settings.roundTrip = false; aplica("A rota termina na última entrega"); });
+    q("#ifFimIni").addEventListener("click", () => { st.end = null; st.settings.roundTrip = true; if (st.start) aplica("No fim, volta ao início"); else gps(x => { st.start = x; aplica("No fim, volta para onde você está agora"); }); });
+    q("#ifFimGps").addEventListener("click", () => gps(x => { st.end = x; aplica("Fim: este local"); }));
+    q("#ifFimMapa").addEventListener("click", () => { closeSheet(); go("rota"); setPinMode("end"); });
+    q("#ifFimOk").addEventListener("click", () => busca(q("#ifFimTxt").value, x => { st.end = x; aplica("Fim definido"); }));
+    q("#ifFecha").addEventListener("click", closeSheet);
+  });
+}
 function routeKm(list, from) { let k = 0, p = from || st.start; list.filter(hasGeo).forEach(s => { if (p) k += hav(p, s); p = s; }); return k; }
 function lastPoint() { const d = st.stops.filter(s => s.status !== "pending" && hasGeo(s)); return d.length ? d[d.length - 1] : st.start; }
 
@@ -84,7 +125,7 @@ function ordenar(geo, anchor, d) {
     let cur = out.length ? out[out.length - 1] : anchor, seq = [];
     while (group.length) { group.sort((x, y) => d(cur, x) - d(cur, y)); cur = group.shift(); seq.push(cur); }
     const startPt = out.length ? out[out.length - 1] : anchor;
-    const endPt = (r === 3 || !geo.some(s => rank(s) > r)) && st.settings.roundTrip ? st.start : null;
+    const endPt = (r === 3 || !geo.some(s => rank(s) > r)) ? fimPt() : null;
     seq = twoOpt(seq, startPt, endPt, d);
     out = out.concat(seq);
   });
@@ -114,7 +155,7 @@ async function refinarPelasRuas() {
   const geo = pending().filter(hasGeo); if (geo.length < 3) return "poucas";
   const anchor = lastPoint() || geo[0];
   const pts = anchor === geo[0] ? geo.slice() : [anchor, ...geo];
-  if (st.settings.roundTrip && st.start && !pts.includes(st.start)) pts.push(st.start);
+  const fp = fimPt(); if (fp && !pts.includes(fp)) pts.push(fp);
   if (pts.length > 100) return "muitas"; // serviço gratuito aceita até 100 pontos por vez
   const chave = pts.map(p => p.lat.toFixed(5) + "," + p.lng.toFixed(5)).join(";");
   let dur = matrizCache.get(chave);
@@ -431,17 +472,37 @@ function sameBuildingCount(s) {
 }
 
 /* ===================== mapa ===================== */
+/* Mapa base: Google Maps quando a chave existe (firebase-config.js → DELIVEROTA_GMAPS_KEY);
+   sem chave, ou se o Google recusar, usa o OpenStreetMap. O layout do DeliveRota fica por cima. */
+const GKEY = window.DELIVEROTA_GMAPS_KEY || "";
+let osmBase = null, gBase = null, mapaGoogle = false;
+function osmLayer() { if (!osmBase) osmBase = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }); return osmBase; }
+function voltaOSM() { mapaGoogle = false; document.body.classList.remove("gmapa"); if (gBase && map) { try { map.removeLayer(gBase); } catch (e) {} } if (map && !map.hasLayer(osmLayer())) osmLayer().addTo(map); }
+function carregaScript(src) { return new Promise((ok, erro) => { const t = document.createElement("script"); t.src = src; t.async = true; t.onload = ok; t.onerror = erro; document.head.appendChild(t); }); }
+async function baseMapa() {
+  if (!GKEY || !navigator.onLine) { osmLayer().addTo(map); return; }
+  osmLayer().addTo(map); // aparece na hora; troca pelo Google quando carregar
+  try {
+    window.gm_authFailure = () => { voltaOSM(); console.warn("Chave do Google Maps recusada"); };
+    if (!(window.google && google.maps)) await new Promise((ok, erro) => { window.__gmPronto = ok; carregaScript(`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(GKEY)}&language=pt-BR&region=BR&loading=async&callback=__gmPronto`).catch(erro); setTimeout(() => erro(new Error("tempo")), 15000); });
+    if (!L.gridLayer.googleMutant) await carregaScript("vendor/googlemutant.js");
+    gBase = L.gridLayer.googleMutant({ type: "roadmap", maxZoom: 21, styles: [{ featureType: "poi.business", stylers: [{ visibility: "off" }] }, { featureType: "transit", elementType: "labels.icon", stylers: [{ visibility: "off" }] }] });
+    gBase.addTo(map); mapaGoogle = true; document.body.classList.add("gmapa");
+    setTimeout(() => { if (mapaGoogle && map.hasLayer(osmBase)) map.removeLayer(osmBase); }, 1500);
+  } catch (e) { voltaOSM(); }
+}
 let map, layer, routeLine, pinMode = null, osrmKey = "", osrmLine = null, osrmKm = null;
 function initMap() {
   if (!window.L) { $("#mapOff").hidden = false; return; }
   map = L.map("map", { zoomControl: false, attributionControl: true }).setView(REGION.center, REGION.zoom);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
+  baseMapa();
   layer = L.layerGroup().addTo(map);
   map.on("click", async e => {
     if (!pinMode) return;
     const { lat, lng } = e.latlng; const target = pinMode; setPinMode(null);
     if (target === "new") { toast("Buscando endereço do ponto..."); const a = await reverse(lat, lng); addStops([{ ...a, lat, lng, src: "mapa" }]); toast("Parada adicionada pelo mapa"); }
     else if (target === "start") { st.start = { lat, lng, label: "Ponto escolhido no mapa" }; save(); renderAll(true); toast("Ponto de partida definido"); }
+    else if (target === "end") { st.end = { lat, lng, label: "Ponto escolhido no mapa" }; save(); if (pending().filter(hasGeo).length >= 2) optimize({ quieto: true }); else renderAll(true); toast("Ponto final definido"); }
     else { const s = byId(target); if (s) { s.lat = lat; s.lng = lng; s.geo = "ok"; save(); renderAll(true); toast("Local da parada ajustado"); } }
   });
 }
@@ -453,17 +514,21 @@ function drawMap(fit) {
   const pts = [];
   if (st.start) { L.marker([st.start.lat, st.start.lng], { icon: icon("base", "P"), title: "Partida" }).addTo(layer); pts.push([st.start.lat, st.start.lng]); }
   const pend = pending();
+  if (st.end && st.end.lat != null) { L.marker([st.end.lat, st.end.lng], { icon: icon("base", "F"), title: "Fim da rota" }).addTo(layer); pts.push([st.end.lat, st.end.lng]); }
   st.stops.forEach(s => {
     if (!hasGeo(s)) return;
     const n = stopNumber(s);
     const cls = s.status === "delivered" ? "done" : s.status === "failed" ? "fail" : (pend[0] === s ? "next" : "");
-    L.marker([s.lat, s.lng], { icon: icon(cls + gCls(s), s.status === "delivered" ? "✓" : n), zIndexOffset: cls === "next" ? 1000 : 0 })
-      .on("click", () => stopSheet(s)).addTo(layer);
+    const ehAlvo = NV.on && NV.alvo === s;
+    const mk = L.marker([s.lat, s.lng], { icon: icon((ehAlvo ? "next" : (NV.on && cls === "next" ? "" : cls)) + gCls(s), s.status === "delivered" ? "✓" : n), zIndexOffset: ehAlvo ? 1500 : (cls === "next" ? 1000 : 0) })
+      .on("click", () => NV.on ? navParadaSheet(s) : stopSheet(s)).addTo(layer);
+    if (NV.on && s.status === "pending") mk.bindTooltip(`${esc(s.street || "")}${s.num ? ", " + esc(s.num) : ""}`, { permanent: true, direction: "right", offset: [16, 0], className: "navlbl" + (ehAlvo ? " alvo" : "") });
     pts.push([s.lat, s.lng]);
   });
-  const path = [lastPoint(), ...pend].filter(p => p && p.lat != null).map(p => [p.lat, p.lng]);
+  const path = [lastPoint(), ...pend, pend.length ? fimPt() : null].filter(p => p && p.lat != null).map(p => [p.lat, p.lng]);
   const key = path.map(p => p.map(x => x.toFixed(5)).join(",")).join(";");
-  if (osrmLine && key === osrmKey) L.polyline(osrmLine, { color: "#18A957", weight: 5, opacity: .85 }).addTo(layer);
+  if (NV.on) { /* navegando: só a linha azul do caminho até a parada */ }
+  else if (osrmLine && key === osrmKey) L.polyline(osrmLine, { color: "#18A957", weight: 5, opacity: .85 }).addTo(layer);
   else { if (path.length > 1) L.polyline(path, { color: "#18A957", weight: 4, opacity: .7, dashArray: "6 8" }).addTo(layer); fetchRoad(path, key); }
   if (fit && pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 16 });
 }
@@ -550,14 +615,14 @@ function renderNext0() {
   }
   if (!rotaComecou()) {
     const busy = p.filter(x => x.geo === "busy").length, semMapa = p.filter(x => !hasGeo(x) && x.geo !== "busy").length;
-    const km = routeKm(p.filter(hasGeo), lastPoint());
-    const fim = new Date(Date.now() + (km / SPEED[st.settings.vehicle] * 60 + p.length * st.settings.stopMin) * 60000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const pv = previsao(p); const km = pv.km; const fim = hhmm(pv.fim);
     const grupos = [...new Set(p.map(x => x.grupo || 0))].sort((a, b) => a - b);
     const legenda = grupos.length > 1 ? `<div class="legenda">${grupos.map(g => `<span class="lg${g ? " g" + (((g - 1) % 4) + 1) : ""}"><i></i>${g ? "Rota " + (g + 1) : "Principal"}: ${p.filter(x => (x.grupo || 0) === g).length}</span>`).join("")}</div>` : "";
     const esperando = busy && st.queroComecar;
     box.innerHTML = `<div class="cta-box ready">
       <button class="xclose" data-act="cancelroute" aria-label="Cancelar rota" title="Cancelar rota">✕</button>
-      <div class="ready-line"><span class="ready-tit">${busy ? "Organizando a rota" : "Rota pronta"}</span><span class="ready-num"><b>${p.length}</b> parada${p.length > 1 ? "s" : ""}${km ? ` · ${km1(km)} km` : ""}${busy ? "" : ` · fim ~${fim}`}</span></div>
+      <div class="ready-line"><span class="ready-tit">${busy ? "Organizando a rota" : "Rota pronta"}</span><span class="ready-num"><b>${p.length}</b> parada${p.length > 1 ? "s" : ""}${km ? ` · ${km1(km)} km` : ""}${busy ? "" : ` · término ~${fim}`}</span></div>
+      <button class="inifim" data-act="inifim"><span>Início: <b>${esc(nomePonto(st.start, "onde você estiver"))}</b></span><span>Fim: <b>${esc(st.end ? nomePonto(st.end) : (st.settings.roundTrip && st.start ? "voltar ao início" : "última entrega"))}</b></span><i>✎</i></button>
       <span class="ready-st${busy ? " busy" : ""}">${busy ? `<i class="spin"></i>Achando ${busy} no mapa` : (grupos.length > 1 ? "✓ Tudo junto e otimizado" : "✓ Otimizada na melhor ordem")}</span>
       ${legenda}
       <button class="btn primary cta" data-act="start" ${esperando ? "disabled" : ""}><svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>${esperando ? "COMEÇANDO..." : "COMEÇAR ROTA"}</button>
@@ -1195,16 +1260,16 @@ function onboardSheet() {
 /* ===================== app de navegação: Google Maps (padrão) ou Waze ===================== */
 const NAV_ICON = { app: '<svg width="26" height="26" viewBox="0 0 24 24"><rect width="24" height="24" rx="6" fill="#18A957"/><path d="M12 5 18 18 12 15 6 18z" fill="#fff"/></svg>', google: '<svg width="26" height="26" viewBox="0 0 24 24"><path fill="#34A853" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg>',
   waze: '<svg width="26" height="26" viewBox="0 0 24 24"><circle cx="12" cy="11" r="8.5" fill="#33CCFF"/><circle cx="9.3" cy="10" r="1.2" fill="#0B1A2A"/><circle cx="14.7" cy="10" r="1.2" fill="#0B1A2A"/><path d="M8.8 13.3c1.8 1.6 4.6 1.6 6.4 0" stroke="#0B1A2A" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>' };
-function precisaPerguntarNav() { return !st.navAsked || Date.now() - st.navAsked > 604800000; }
+function precisaPerguntarNav() { return !st.navAsked || !st.navV2 || Date.now() - st.navAsked > 604800000; }
 function navSheet(depois) {
   sheet(`<h3>Qual app você usa para navegar?</h3><p class="sub">Ao começar a rota, a tela do DeliveRota já aproxima e mostra cada curva. Escolha também onde abrir a navegação. Dá para trocar a qualquer hora no cartão da entrega.</p>
     <div class="navpick">
-      <button data-navpick="google" aria-pressed="${st.settings.nav !== "waze"}">${NAV_ICON.google}<span><b>Google Maps</b><em>Mostra as próximas paradas no caminho</em></span></button>
+      <button data-navpick="app" aria-pressed="${st.settings.nav === "app"}">${NAV_ICON.app}<span><b>Aqui no DeliveRota</b><em>Mapa em tela cheia, seta de cada curva e voz</em></span></button>
+      <button data-navpick="google" aria-pressed="${st.settings.nav === "google"}">${NAV_ICON.google}<span><b>Google Maps</b><em>Abre o app do Google com as próximas paradas</em></span></button>
       <button data-navpick="waze" aria-pressed="${st.settings.nav === "waze"}">${NAV_ICON.waze}<span><b>Waze</b><em>Uma parada por vez</em></span></button>
-      <button data-navpick="app" aria-pressed="${st.settings.nav === "app"}">${NAV_ICON.app}<span><b>Aqui no DeliveRota</b><em>Mapa bem de perto, com a seta de cada curva e voz</em></span></button>
     </div>`, bg => {
     bg.querySelectorAll("[data-navpick]").forEach(b => b.addEventListener("click", () => {
-      st.settings.nav = b.dataset.navpick; st.navAsked = Date.now(); save(); closeSheet(); renderNext();
+      st.settings.nav = b.dataset.navpick; st.navAsked = Date.now(); st.navV2 = 1; save(); closeSheet(); renderNext();
       toast("Navegação pelo " + ({ waze: "Waze", app: "DeliveRota" }[st.settings.nav] || "Google Maps"));
       if (depois) depois();
     }));
@@ -1251,9 +1316,14 @@ function navUI() {
   let b = $("#navBan");
   if (!b) {
     $(".mapcol").insertAdjacentHTML("beforeend", `<div id="navBan" class="navban" hidden><div class="nb-seta" id="nbSeta"></div><div class="nb-txt"><b id="nbDist"></b><span id="nbInstr"></span><em id="nbDepois"></em></div></div>
-      <div id="navFoot" class="navfoot" hidden><div><b id="nfDest"></b><span id="nfResto"></span></div><button class="btn primary sm" id="nfEntregue" hidden>Entregue</button><button class="btn ghost sm" id="nfCentro" aria-label="Centralizar">◎</button><button class="btn warn sm" id="nfSair">Sair</button></div>`);
+      <div id="nfPerto" class="nfperto" hidden><div id="npTxt"></div><button class="btn primary sm" id="npFaz">Fazer agora</button><button class="btn ghost sm" id="npPula" aria-label="Agora não">✕</button></div>
+      <div id="navFoot" class="navfoot" hidden><div><b id="nfDest"></b><span id="nfResto"></span><em id="nfTerm"></em></div><button class="btn ghost sm" id="nfLista" aria-label="Lista de paradas">☰ Paradas</button><button class="btn primary sm" id="nfEntregue" hidden>Entregue</button><button class="btn ghost sm" id="nfCentro" aria-label="Centralizar">◎ Centro</button><button class="btn ghost sm" id="nfFora" aria-label="Abrir em outro app">↗ ${st.settings.nav === "waze" ? "Waze" : "Maps"}</button><button class="btn warn sm" id="nfSair">Sair</button></div>`);
+    $("#nfFora").addEventListener("click", () => { if (!NV.alvo) return; const L2 = navLinks(NV.alvo, true); window.open(st.settings.nav === "waze" ? L2.waze : (L2.gmapsMulti || L2.gmaps), "_blank", "noopener"); });
     $("#nfEntregue").addEventListener("click", () => { if (NV.alvo) deliverSheet(NV.alvo); });
     $("#nfSair").addEventListener("click", () => pararNavApp(true));
+    $("#nfLista").addEventListener("click", navListaSheet);
+    $("#npFaz").addEventListener("click", () => { const x = byId($("#nfPerto").dataset.id); if (x) trocarAlvoNav(x); });
+    $("#npPula").addEventListener("click", () => { const id = $("#nfPerto").dataset.id; NV.pulouPerto = NV.pulouPerto || {}; NV.pulouPerto[id] = 1; $("#nfPerto").hidden = true; });
     $("#nfCentro").addEventListener("click", () => { if (NV.eu && map) map.setView([NV.eu.lat, NV.eu.lng], 18); NV.solto = false; });
     b = $("#navBan");
   }
@@ -1266,11 +1336,62 @@ async function iniciarNavApp(s) {
   NV.on = true; NV.alvo = s; NV.rota = null; NV.prox = 1; NV.falou = {}; NV.chegou = false; NV.solto = false;
   document.body.classList.add("navon"); navUI().hidden = false; $("#navFoot").hidden = false;
   $("#nbInstr").textContent = "Buscando sua localização..."; $("#nbDist").textContent = ""; $("#nbDepois").textContent = ""; $("#nbSeta").innerHTML = "";
-  $("#nfDest").textContent = `Parada ${stopNumber(s)} · ${addrLine(s)}`; $("#nfResto").textContent = "";
-  setTimeout(() => map.invalidateSize(), 80);
+  $("#nfDest").textContent = `Parada ${stopNumber(s)} · ${addrLine(s)}`; $("#nfResto").textContent = ""; termNav();
+  setTimeout(() => { map.invalidateSize(); if (s && hasGeo(s)) map.setView([s.lat, s.lng], 17); }, 80);
+  setTimeout(() => map.invalidateSize(), 400);
   try { navigator.wakeLock && navigator.wakeLock.request("screen").then(l => NV.lock = l).catch(() => {}); } catch (e) {}
   if (NV.watch == null) NV.watch = navigator.geolocation.watchPosition(novaPosicao, err => { if (err && err.code === 1) { pararNavApp(); toast("Libere a localização para o DeliveRota mostrar as curvas aqui no app.", 4500); } else $("#nbInstr").textContent = "Procurando o sinal do GPS..."; }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
   map.on("dragstart", soltouMapa);
+  drawMap(false);
+}
+/* navegando: tocar numa parada do mapa → fazer esta agora (fora da ordem) e depois volta para a rota */
+function navParadaSheet(s) {
+  const d = NV.eu && hasGeo(s) ? fmtDist(mDist(NV.eu, s)) : "";
+  sheet(`<h3>Parada ${stopNumber(s)}</h3><p class="sub"><b>${esc(addrLine(s))}</b>${s.comp ? " · " + esc(s.comp) : ""}${s.client ? "<br>" + esc(s.client) : ""}${d ? "<br>" + d + " de você" : ""}</p>
+    <div class="col" style="display:flex;flex-direction:column;gap:8px">
+      ${s.status === "pending" && NV.alvo !== s ? `<button class="btn primary" id="npIr">Fazer esta agora</button>` : ""}
+      ${s.status === "pending" ? `<button class="btn ghost" id="npOk">Já entreguei esta</button>` : ""}
+      <button class="btn ghost" id="npFecha">Fechar</button></div>
+    <p class="sub" style="margin-top:8px">Depois desta, a navegação volta sozinha para a ordem da rota.</p>`, bg => {
+    const ir = bg.querySelector("#npIr"); if (ir) ir.addEventListener("click", () => { closeSheet(); trocarAlvoNav(s); });
+    const okb = bg.querySelector("#npOk"); if (okb) okb.addEventListener("click", () => { closeSheet(); deliverSheet(s); });
+    bg.querySelector("#npFecha").addEventListener("click", closeSheet);
+  });
+}
+function trocarAlvoNav(s) {
+  if (!NV.on || !s) return;
+  NV.alvo = s; NV.rota = null; NV.prox = 1; NV.falou = {}; NV.chegou = false; NV.solto = false; NV.pulouPerto = NV.pulouPerto || {};
+  $("#nfDest").textContent = `Parada ${stopNumber(s)} · ${addrLine(s)}`; $("#nbInstr").textContent = "Calculando o caminho..."; $("#nbDist").textContent = ""; $("#nbDepois").textContent = "";
+  const ch = $("#nfPerto"); if (ch) ch.hidden = true;
+  if (NV.layer) NV.layer.clearLayers();
+  drawMap(false); if (NV.eu) novaPosicao({ coords: { latitude: NV.eu.lat, longitude: NV.eu.lng, heading: null, speed: 0 } });
+  if (st.settings.speak) try { speak(`Indo para a parada ${stopNumber(s)}, ${s.street}, ${spokenNum(s.num || "sem número")}.`); } catch (e) {}
+}
+/* passando perto de outra parada (fora da ordem): oferece fazer agora */
+function avisoPerto(eu) {
+  const ch = $("#nfPerto"); if (!ch) return;
+  NV.pulouPerto = NV.pulouPerto || {};
+  const perto = pending().filter(x => x !== NV.alvo && hasGeo(x) && !NV.pulouPerto[x.id]).map(x => ({ x, d: mDist(eu, x) })).filter(o => o.d < 150).sort((a, b) => a.d - b.d)[0];
+  if (!perto) { ch.hidden = true; return; }
+  const x = perto.x;
+  if (ch.dataset.id !== x.id) { ch.dataset.id = x.id; if (st.settings.speak) try { speak(`Parada ${stopNumber(x)} aqui perto.`); } catch (e) {} }
+  $("#npTxt").innerHTML = `<b>Parada ${stopNumber(x)} aqui perto</b><span>${esc(addrLine(x))} · ${fmtDist(perto.d)}</span>`;
+  ch.hidden = false;
+}
+function termNav() {
+  const el = $("#nfTerm"); if (!el) return; const pv = previsao(); const n = pending().length;
+  el.textContent = `Término ${hhmm(pv.fim)} · ${n} parada${n > 1 ? "s" : ""} · ${km1(pv.km)} km${pv.volta ? " com a volta" : ""}`;
+}
+/* navegando: lista das paradas com o horário previsto de cada uma */
+function navListaSheet() {
+  const pv = previsao();
+  sheet(`<h3>Paradas da rota</h3><p class="sub">Término ${hhmm(pv.fim)} · ${pv.itens.length} paradas · ${km1(pv.km)} km${pv.volta ? " com a volta" : ""}</p>
+    <div class="anlist navlista">${pv.itens.map(o => `<button data-np="${o.s.id}" class="${NV.alvo === o.s ? "alvo" : ""}"><span class="nl-n">${stopNumber(o.s)}<em>${hhmm(o.t)}</em></span><span class="nl-t"><b>${esc(addrLine(o.s))}</b><em>${esc([o.s.comp, o.s.client, o.s.bairro].filter(Boolean).join(" · "))}</em></span></button>`).join("")}
+    ${fimPt() ? `<div class="nl-fim"><span class="nl-n">🏠<em>${hhmm(pv.fim)}</em></span><span class="nl-t"><b>${esc(st.end ? nomePonto(st.end) : "Volta ao início")}</b><em>Fim da rota</em></span></div>` : ""}</div>
+    <button class="btn ghost" id="nlFecha" style="width:100%;margin-top:10px">Voltar ao mapa</button>`, bg => {
+    bg.querySelectorAll("[data-np]").forEach(b => b.addEventListener("click", () => { const x = byId(b.dataset.np); closeSheet(); if (x) navParadaSheet(x); }));
+    bg.querySelector("#nlFecha").addEventListener("click", closeSheet);
+  });
 }
 function soltouMapa() { if (NV.on) NV.solto = true; }
 function pararNavApp(manual) {
@@ -1287,8 +1408,9 @@ async function novaPosicao(pos) {
   if (!NV.on) return;
   if (NV.eu && mDist(NV.eu, eu) > 3) NV.rumo = (pos.coords.heading != null && !isNaN(pos.coords.heading) && pos.coords.speed > 1) ? pos.coords.heading : rumoEntre(NV.eu, eu);
   NV.eu = eu;
+  try { avisoPerto(eu); } catch (e) {}
   const s = NV.alvo;
-  if (!s || s.status !== "pending") { const n = pending()[0]; if (!n) { pararNavApp(); return; } NV.alvo = n; NV.rota = null; NV.prox = 1; NV.falou = {}; NV.chegou = false; $("#nfDest").textContent = `Parada ${stopNumber(n)} · ${addrLine(n)}`; }
+  if (!s || s.status !== "pending") { const n = pending()[0]; if (!n) { pararNavApp(); return; } NV.alvo = n; NV.rota = null; NV.prox = 1; NV.falou = {}; NV.chegou = false; $("#nfDest").textContent = `Parada ${stopNumber(n)} · ${addrLine(n)}`; drawMap(false); }
   // chegou
   if (mDist(eu, NV.alvo) < 35) {
     $("#nfEntregue").hidden = false;
@@ -1320,7 +1442,9 @@ async function novaPosicao(pos) {
   const dep = P[NV.prox + 1]; $("#nbDepois").textContent = dep && dep.maneuver.type !== "arrive" ? "Depois: " + textoPasso(dep).toLowerCase() : (dep ? "Depois: chegada" : "");
   // restante
   let resto = mDist(eu, loc); for (let i = NV.prox; i < P.length; i++) resto += P[i].distance || 0;
-  $("#nfResto").textContent = `${fmtDist(resto)} · ~${Math.max(1, Math.round(resto / 1000 / SPEED[st.settings.vehicle] * 60))} min`;
+  const minAlvo = NV.rota.km > 0 && NV.rota.min ? NV.rota.min * (resto / 1000) / NV.rota.km : resto / 1000 / SPEED[st.settings.vehicle] * 60;
+  $("#nfResto").textContent = `${Math.max(1, Math.round(minAlvo))} min · chega ${hhmm(Date.now() + minAlvo * 60000)} · ${fmtDist(resto)}`;
+  termNav();
   // voz: avisa a 200 m e na hora da curva
   const k = NV.prox;
   if (d < 220 && d > 60 && !NV.falou[k + "a"]) { NV.falou[k + "a"] = 1; speak(`Em ${fmtDist(d).replace(" m", " metros")}, ${textoPasso(passo).toLowerCase()}.`, true); }
@@ -1587,6 +1711,7 @@ function menuRotas() {
   sheet(`<h3>Rotas</h3>${st.rotaNome ? `<p class="sub">Rota atual: <b>${esc(st.rotaNome)}</b>${st.rotaData ? " · " + brOf(st.rotaData) : ""}</p>` : ""}
     <div class="menu-list">
       <button data-m="criar"><span>🗓</span><b>Criar rota</b><em>Com nome e data: hoje, amanhã ou outro dia</em></button>
+      <button data-m="inifim"><span>🏠</span><b>Início e fim da rota</b><em>De onde sai e onde termina (ex.: voltar para casa)</em></button>
       <button data-m="salvas"><span>📂</span><b>Rotas salvas</b><em>${pl ? pl + " rota" + (pl > 1 ? "s" : "") + " para os próximos dias" : "Nenhuma ainda"}</em></button>
       <button data-m="anteriores"><span>↺</span><b>Reutilizar paradas anteriores</b><em>Endereços que você já entregou</em></button>
       <button data-m="copia"${tem ? "" : " disabled"}><span>⤴</span><b>Compartilhar cópia da rota</b><em>Manda as paradas para outro entregador</em></button>
@@ -1597,6 +1722,7 @@ function menuRotas() {
     bg.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => {
       const m = b.dataset.m;
       if (m === "criar") criarRotaSheet();
+      if (m === "inifim") inicioFimSheet();
       if (m === "salvas") rotasSalvasSheet();
       if (m === "anteriores") anterioresSheet();
       if (m === "copia") compartilharSheet(false);
@@ -2703,10 +2829,11 @@ document.addEventListener("click", e => {
   if (d.act === "optall") { const p = pending(); if (p.filter(hasGeo).length >= 2) optimize(); else toast("Rota organizada"); st.otimizada = true; save(); renderAll(true); }
   if (d.act === "addmore") { st.ultimaAdicao = 0; save(); go("add"); }
   if (d.act === "cancelroute") cancelarRota(t);
+  if (d.act === "inifim") inicioFimSheet();
   if (d.act === "desistir") desistirEComecar();
   if (d.act === "gasto") gastoSheet();
   if (d.gasto) gastoSheet((st.gastos || []).find(g => g.id === d.gasto));
-  if (d.navset) { st.settings.nav = d.navset; st.navAsked = Date.now(); save(); renderNext(); toast("Navegação pelo " + ({ waze: "Waze", app: "DeliveRota" }[d.navset] || "Google Maps")); if (d.navset === "app" && rotaComecou() && !NV.on) iniciarNavApp(); }
+  if (d.navset) { st.settings.nav = d.navset; st.navAsked = Date.now(); st.navV2 = 1; save(); renderNext(); toast("Navegação pelo " + ({ waze: "Waze", app: "DeliveRota" }[d.navset] || "Google Maps")); if (d.navset === "app" && rotaComecou() && !NV.on) iniciarNavApp(); }
   if (d.act === "navapp") { if (NV.on) { NV.solto = false; if (NV.eu && map) map.setView([NV.eu.lat, NV.eu.lng], 18); } else iniciarNavApp(); }
   if (d.junto) { const x = byId(d.junto), a = pending()[0]; if (x && a) { st.stops.splice(st.stops.indexOf(x), 1); st.stops.splice(st.stops.indexOf(a) + 1, 0, x); save(); renderAll(false); toast("Parada " + stopNumber(x) + " vem logo depois desta"); } }
   if (d.act === "impgo") confirmImport({ fica: true });
@@ -2894,5 +3021,5 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
 })();
 
 // para testes automáticos
-window.DeliveRota = { empacotar, desempacotar, receberRotaDoLink, adicionarRapido, lerNotinha, gastoSheet, periodData, acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
+window.DeliveRota = { map: () => map, previsao, inicioFimSheet, fimPt, comecarRota, trocarAlvoNav, empacotar, desempacotar, receberRotaDoLink, adicionarRapido, lerNotinha, gastoSheet, periodData, acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
 })();

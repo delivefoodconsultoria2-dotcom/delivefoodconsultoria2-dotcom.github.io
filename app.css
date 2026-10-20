@@ -563,7 +563,15 @@ h2.sec{font-size:24px}
 .perto .btn.sm{min-height:34px;padding:0 12px;font-size:13px;flex:none}
 /* navegação dentro do app */
 body.navon .map-actions{display:none}
-@media (max-width:899px){ body.navon .mapcol{height:62vh!important;min-height:320px!important} body.navon .helpfab{display:none} }
+/* navegando: o mapa toma a tela inteira e some todo o resto */
+body.navon .mapcol{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;height:100dvh!important;min-height:0!important;max-height:none!important;margin:0!important;border:0!important;border-radius:0!important;z-index:950!important}
+body.navon .mapcol .map{height:100%!important;border-radius:0!important}
+body.navon .top,body.navon .nav,body.navon .panel,body.navon .helpfab,body.navon .fab,body.navon .vbubble{display:none!important}
+body.navon{overflow:hidden}
+body.navon .navban{top:calc(10px + env(safe-area-inset-top,0px))}
+body.navon .navfoot{bottom:calc(14px + env(safe-area-inset-bottom,0px))}
+body.navon .leaflet-control-attribution{margin-bottom:calc(84px + env(safe-area-inset-bottom,0px))!important;font-size:9px}
+body.gmapa .leaflet-control-attribution{background:rgba(255,255,255,.6)}
 .navban{position:absolute;left:10px;right:10px;top:10px;z-index:900;display:flex;align-items:center;gap:14px;background:#0E6E37;color:#fff;border-radius:20px;padding:12px 16px;box-shadow:0 14px 34px -10px rgba(0,0,0,.6)}
 .navban[hidden],.navfoot[hidden]{display:none}
 .nb-seta{flex:none;width:64px;height:64px;display:grid;place-items:center}
@@ -577,7 +585,7 @@ body.navon .map-actions{display:none}
 .navfoot span{font-size:12.5px;color:var(--muted);font-weight:700}
 .navfoot .btn.sm{min-height:40px;padding:0 14px;flex:none}
 .meseta{width:44px;height:44px;transition:transform .4s}
-body.navon #toast{top:auto!important;bottom:calc(96px + env(safe-area-inset-bottom,0px))!important}
+body.navon #toast{top:auto!important;bottom:calc(170px + env(safe-area-inset-bottom,0px))!important}
 /* gastos */
 .gfoto{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 .gfoto .btn{min-height:52px;cursor:pointer}
@@ -645,3 +653,37 @@ body.navon .qbar{display:none}
   body.mapa[data-tab="rota"] .cta-box.ready{padding-bottom:4px}
   body.mapa[data-tab="rota"] .cta-box.ready .xclose{top:2px}
 }
+
+/* navegando: nome da rua em cada parada e aviso de parada perto */
+.leaflet-tooltip.navlbl{background:rgba(17,24,20,.82);color:#fff;border:0;border-radius:8px;padding:2px 7px;font-size:11.5px;font-weight:700;box-shadow:none;max-width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.leaflet-tooltip.navlbl::before{display:none}
+.leaflet-tooltip.navlbl.alvo{background:#0E6E37;font-size:13px}
+.nfperto{position:absolute;left:10px;right:10px;bottom:calc(104px + env(safe-area-inset-bottom,0px));z-index:900;display:flex;align-items:center;gap:8px;background:#FFF7E0;color:#3B2A00;border:1px solid #F2C94C;border-radius:16px;padding:8px 8px 8px 14px;box-shadow:0 10px 26px -12px rgba(0,0,0,.5)}
+.nfperto[hidden]{display:none}
+.nfperto>div{flex:1;min-width:0;display:flex;flex-direction:column}
+.nfperto b{font-size:14px}.nfperto span{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nfperto .btn.sm{min-height:40px;padding:0 12px;flex:none}
+
+/* início e fim da rota */
+.inifim{display:flex;align-items:center;gap:10px;width:100%;margin:6px 0 2px;padding:8px 12px;border:1px dashed var(--line);border-radius:12px;background:var(--surface);color:var(--muted);font:inherit;font-size:13px;text-align:left;cursor:pointer;flex-wrap:wrap}
+.inifim span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}
+.inifim b{color:var(--ink)}.inifim i{margin-left:auto;font-style:normal;color:var(--green-strong)}
+.navfoot em{font-style:normal;font-size:12px;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.navfoot .btn.sm{padding:0 11px}
+.navlista{max-height:58vh;padding:0}
+.navlista button,.nl-fim{display:flex;gap:12px;align-items:center;width:100%;border:0;border-bottom:1px solid var(--line);background:none;color:var(--ink);font:inherit;text-align:left;padding:10px 12px;cursor:pointer}
+.navlista button.alvo{background:var(--green-soft,#E6F6EC)}
+.nl-n{flex:none;width:46px;display:flex;flex-direction:column;align-items:center;font-weight:800;font-size:15px}
+.nl-n em{font-style:normal;font-size:12px;color:var(--muted);font-weight:700}
+.nl-t{min-width:0;display:flex;flex-direction:column}.nl-t b{font-size:14.5px}.nl-t em{font-style:normal;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* rodapé da navegação: informação em cima, botões embaixo */
+.navfoot{flex-wrap:wrap;row-gap:8px;padding:10px 10px 10px 14px}
+.navfoot>div{flex:1 1 100%}
+.navfoot #nfResto{font-size:17px;color:var(--ink);font-weight:800;margin-top:1px}
+.navfoot .btn.sm{flex:1 1 0;min-height:44px}
+.navfoot #nfEntregue{flex:2 1 0}
+.nfperto{bottom:calc(192px + env(safe-area-inset-bottom,0px))}
+body.navon .leaflet-control-attribution{margin-bottom:calc(186px + env(safe-area-inset-bottom,0px))!important}
+body.navon #toast{bottom:calc(260px + env(safe-area-inset-bottom,0px))!important}
+.navfoot .btn.sm{white-space:nowrap;font-size:13.5px;gap:4px;padding:0 8px}
+.navfoot .btn.sm{white-space:nowrap;font-size:13.5px;gap:4px;padding:0 8px}

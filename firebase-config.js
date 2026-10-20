@@ -30,3 +30,7 @@ window.DELIVEROTA_VIDEO_URL = "";
    Quando o servidor estiver no ar, coloque o endereço da pasta api, por exemplo:
    window.DELIVEROTA_API = "https://deliverota.delivefoodconsultoria.com.br/api/"; */
 window.DELIVEROTA_API = "";
+
+/* Chave do Google Maps (mapa do Google por baixo do layout do DeliveRota).
+   Vazio = usa o mapa gratuito (OpenStreetMap). Cole a chave entre as aspas. */
+window.DELIVEROTA_GMAPS_KEY = "";

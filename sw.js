@@ -1,6 +1,6 @@
 /* DeliveRota — funciona sem internet depois da primeira abertura */
-const VERSION = "deliverota-v19";
-const SHELL = ["./", "index.html", "app.css", "app.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
+const VERSION = "deliverota-v20";
+const SHELL = ["./", "index.html", "app.css", "app.js", "firebase-config.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 const LIB_HOSTS = ["unpkg.com", "cdn.jsdelivr.net", "cdnjs.cloudflare.com", "cdn.sheetjs.com", "fonts.googleapis.com", "fonts.gstatic.com", "www.gstatic.com"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION && k !== "deliverota-tiles" && k !== "deliverota-share").map(k => caches.delete(k)))).then(() => self.clients.claim())); });
