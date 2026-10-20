@@ -261,7 +261,7 @@ async function photon(s) {
   const city = s.city || st.settings.city || ""; const cityName = city.split(" - ")[0];
   const num = /^\d+/.test(s.num || "") ? s.num.match(/^\d+/)[0] : "";
   if (!s.street) return null;
-  const q = [s.street + (num ? " " + num : ""), s.bairro, cityName].filter(Boolean).join(", ");
+  const q = [(s.semTipo ? s.street.replace(/^rua\s+/i, "") : s.street) + (num ? " " + num : ""), s.bairro, cityName].filter(Boolean).join(", ");
   const bias = (ondeEstou && Date.now() - ondeEstou.t < 30 * 60000 ? ondeEstou : null) || st.start || st.cityCenter || { lat: REGION.center[0], lng: REGION.center[1] };
   const u = new URL("https://photon.komoot.io/api/");
   u.searchParams.set("q", q); u.searchParams.set("limit", "3"); u.searchParams.set("lat", bias.lat); u.searchParams.set("lon", bias.lng);
@@ -484,7 +484,7 @@ function newStop(o) {
   o = limparEndereco(o);
   return { id: uid(), street: o.street || "", num: o.num || "s/n", comp: o.comp || "", bairro: o.bairro || "", city: o.city || "", cep: o.cep || "",
     ref: o.ref || "", client: o.client || "", phone: o.phone || "", code: o.code || "", pk: Math.max(1, +o.pk || 1), win: o.win || "", prio: !!o.prio,
-    lat: o.lat ?? null, lng: o.lng ?? null, geo: o.lat != null ? "ok" : "", status: "pending", reason: "", recv: "", note: "", photo: false, doneAt: null, src: o.src || "" };
+    lat: o.lat ?? null, lng: o.lng ?? null, geo: o.lat != null ? "ok" : "", status: "pending", reason: "", recv: "", note: "", photo: false, doneAt: null, src: o.src || "", ...(o.semTipo ? { semTipo: true } : {}) };
 }
 /* rotas secundárias: cada lote adicionado depois ganha uma cor */
 const COR_NOMES = ["", "laranja", "roxa", "azul", "rosa"];
@@ -1793,11 +1793,12 @@ function adicionarRapido(txt, alts) {
   const t = norm(txt);
   if (/^(ir |vou |vamos |me leva|leva |bora |partiu|entreg|proxima|navegar|gastei|abasteci|paguei|pular|otimiz)/.test(t)) { $("#qIn").value = ""; handleCommand(txt, alts); return; }
   // da agenda: o mesmo endereço já usado antes vem com o local certo
+  if (alts) txt = falaParaEndereco(txt) || txt; // veio da voz: "cento e vinte" → 120
   const a = parseAddressLine(STREET_RE.test(txt) ? txt : "Rua " + txt);
   if (!a.street || a.street.length < 3) { toast("Escreva rua e número. Ex.: Rua da Bahia, 1148"); return; }
   const lim = limparEndereco(a); const k = (lim.street + "|" + lim.num + "|" + (lim.comp || "")).toLowerCase();
   const ag = (st.agenda || []).find(x => x.k === k);
-  addStops([{ ...a, ...(ag && ag.lat != null ? { lat: ag.lat, lng: ag.lng } : {}), src: "rápido" }]);
+  addStops([{ ...a, ...(ag && ag.lat != null ? { lat: ag.lat, lng: ag.lng } : {}), src: "rápido", semTipo: !STREET_RE.test(txt) }]);
   $("#qIn").value = ""; $("#qIn").blur();
   toast(`Parada adicionada: ${lim.street}, ${lim.num || "s/n"}`);
 }
@@ -2070,7 +2071,8 @@ function handleCommand(raw, alts) {
   if (/^(adicionar|adiciona|nova parada|novo endereco|anota|anotar)\b/.test(t)) {
     const rest = raw.replace(/^\s*(adicionar|adiciona|nova parada|novo endereço|novo endereco|anota|anotar)\s*(parada|endereço|endereco)?\s*/i, "")
       .replace(/\bnúmero\b/gi, ",").replace(/\bsem número\b/gi, "s/n").replace(/\bapartamento\b/gi, "apto");
-    const a = parseAddressLine(STREET_RE.test(rest) ? rest : "Rua " + rest);
+    const rest2 = falaParaEndereco(rest.replace(/,/g, " ")) || rest;
+    const a = parseAddressLine(STREET_RE.test(rest2) ? rest2 : "Rua " + rest2);
     if (!a.street || a.street.length < 4) return speak("Não entendi o endereço. Diga, por exemplo: adicionar rua Harmonia, 456.");
     addStops([{ ...a, src: "voz" }]); return speak(`Parada adicionada: ${a.street}, ${spokenNum(a.num || "s/n")}.`);
   }
@@ -2121,7 +2123,27 @@ function handleCommand(raw, alts) {
   if (has("comandos", "o que posso falar")) { helpSheet(); return speak("Estes são os comandos.", true); }
   if (/^(como|onde|o que|ajuda|duvida|qual)\b/.test(t)) { helpSheet2(raw); const r = helpSearch(raw)[0]; return speak(r ? r.a.replace(/<[^>]+>/g, "") : "Não achei. Veja os temas na tela.", true); }
   { const r = acharParadaFalada(alts); if (r.achou) return irParaParada(r.achou, true); if (r.opcoes && r.opcoes.length >= 2 && r.opcoes[0].pts >= 1.5) return escolherParadaSheet(r.opcoes, raw); }
+  // não é comando: se parece endereço, vira parada nova ("Vereador Antônio Menezes 120")
+  { const e = falaParaEndereco(raw); if (e) {
+      const a = parseAddressLine(STREET_RE.test(e) ? e : "Rua " + e);
+      if (a.street && a.street.replace(/^(rua|avenida)\s+/i, "").length >= 4) {
+        addStops([{ ...a, num: a.num || "s/n", src: "voz", semTipo: !STREET_RE.test(e) }]);
+        vb("Parada adicionada", `${a.street}, ${a.num || "sem número"}${a.bairro ? " · " + a.bairro : ""}`);
+        return speak(`Adicionei ${a.street}${a.num ? ", " + spokenNum(a.num) : ""}.`);
+      } } }
   vb("Não entendi", `"${raw}". Toque em Ver comandos.`); speak("Não entendi. Tente: entregue, próxima, ir para rua tal, navegar ou ajuda.");
+}
+/* fala → texto de endereço: tira "adicionar/vou pra", troca número falado por algarismo */
+function falaParaEndereco(raw) {
+  let t = String(raw || "").trim().replace(/^(adicionar|adiciona|acrescenta|coloca|colocar|inclui|incluir|nova parada|parada|endere[cç]o)\s+(na |no |em |a |o )?/i, "").replace(/\bn[uú]mero\b/gi, " ").replace(/\bsem n[uú]mero\b/gi, " s/n").replace(/\bapartamento\b/gi, "apto");
+  const ws = t.split(/\s+/); const out = []; let acc = 0, tem = false;
+  const fecha = () => { if (tem) { out.push(String(acc)); acc = 0; tem = false; } };
+  ws.forEach(w => { const k = norm(w); if (NUM_FALADO[k] != null && !(k === "um" || k === "uma") || (tem && NUM_FALADO[k] != null)) { acc += NUM_FALADO[k]; tem = true; } else if (k === "e" && tem) { /* "cento e vinte" */ } else { fecha(); out.push(w); } });
+  fecha(); t = out.join(" ").replace(/\s+/g, " ").trim();
+  if (t.split(" ").filter(w => /[A-Za-zÀ-ú]{2,}/.test(w)).length < 2) return "";
+  if (/^(sim|não|nao|ok|oi|ola|olá|obrigado|cancelar|parar|sair|voltar)\b/i.test(t)) return "";
+  // número solto no fim vira número da casa: "Vereador Antônio Menezes 120" → "..., 120"
+  return t.replace(/\s+(\d{1,6}[A-Za-z]?)(\s|$)/, ", $1$2");
 }
 let rec = null, listening = false, handsFree = false, speaking = false, vbT;
 function vb(title, text, keep) {
