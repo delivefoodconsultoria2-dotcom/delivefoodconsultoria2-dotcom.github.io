@@ -324,26 +324,74 @@ const STREET_RE = /\b(rua|r\.|av\.?|avenida|travessa|tv\.?|trav\.?|alameda|al\.|
 const CEP_RE = /\b(\d{5})-?(\d{3})\b/;
 const PHONE_RE = /(\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4})/;
 const COMP_RE = /\b(apto?\.?|apartamento|ap\b|bloco|bl\.?|casa|cs\.?|fundos|frente|sala|sl\.?|loja|lj\.?|andar|conj\.?|cj\b|torre|lote|lt\.?|quadra|qd\.?|kit|box)\b/i;
+const UFS = "AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO";
+/* TEXTO EM CAIXA ALTA → Texto Normal (Rua dos Goitacazes) */
+function titulo(t) {
+  t = String(t || ""); const letras = t.replace(/[^A-Za-zÀ-ú]/g, "");
+  if (letras.length < 3 || t !== t.toUpperCase()) return t;
+  return t.toLowerCase().replace(/(^|[\s\-\/(])([a-zà-ú])/g, (m, a, b) => a + b.toUpperCase()).replace(/\b(Da|De|Do|Das|Dos|E)\b/g, (m, x, i) => i ? m.toLowerCase() : m).replace(/\b(Mg|Sp|Rj|Es|Ba|Go|Df|Pr|Sc|Rs)\b$/, m => m.toUpperCase());
+}
+/* cidade e estado colados no fim ("Prado Belo Horizonte MG") */
+function tiraCidade(rest, out) {
+  const cidades = [...new Set([...RMBH, (st.settings.city || "").split(" - ")[0]].filter(Boolean))].sort((a, b) => b.length - a.length);
+  const semAc = x => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const r0 = rest.replace(/[\s,\-–\/]+$/, "");
+  let ufm = r0.match(new RegExp("[\\s,\\-–/]+(" + UFS + ")$", "i")); let base = ufm ? r0.slice(0, ufm.index) : r0;
+  for (const c of cidades) {
+    const b2 = semAc(base), c2 = semAc(c);
+    if (b2.endsWith(c2) && (b2.length === c2.length || /[\s,\-–\/]/.test(b2[b2.length - c2.length - 1]))) {
+      out.city = c + " - " + (ufm ? ufm[1].toUpperCase() : "MG"); return base.slice(0, base.length - c.length).replace(/[\s,\-–\/]+$/, "");
+    }
+  }
+  if (ufm && /^[A-Z]{2}$/.test(ufm[1])) { const pe = base.split(/\s*[,–]\s*|\s-\s/); if (pe.length > 1) { out.city = pe.pop() + " - " + ufm[1]; return pe.join(", "); } }
+  return rest;
+}
 function parseAddressLine(raw) {
   let line = raw.replace(/\s+/g, " ").trim().replace(/^(\d{1,3}\s*[.)\-–º°]|[-•*–>]|parada\s*\d+\s*[:\-]?)\s+/i, "").replace(/^(endere[cç]o|end\.?|destino|entrega)\s*[:\-]\s*/i, "").trim();
   const out = { raw: raw.trim(), street: "", num: "", comp: "", bairro: "", city: "", cep: "", phone: "" };
   // código de rastreio do manifesto (Shopee BR…, Mercado Livre, Correios AA123456789BR, Loggi, Amazon TBA…)
   const cod = line.match(/\b(BR\d{9,}[A-Z]?|AT\d{8,}\w*|TBA\d{9,}|[A-Z]{2}\d{9}[A-Z]{2}|SPX\w{8,}|\d{12,14})\b/);
   if (cod && !CEP_RE.test(cod[1])) { out.code = cod[1]; line = line.replace(cod[0], " ").replace(/\s+/g, " ").trim(); }
-  const cm = line.match(CEP_RE); if (cm) { out.cep = cm[1] + "-" + cm[2]; line = line.replace(cm[0], " ").replace(/\bcep\s*[:.]?\s*/i, " "); }
+  const cm = line.match(CEP_RE);
+  if (cm) {
+    out.cep = cm[1] + "-" + cm[2];
+    // linha de tabela: depois do CEP vem bairro repetido e a quantidade de pacotes ("... 30411046 Prado 10")
+    const cauda = line.slice(cm.index + cm[0].length).replace(/^[\s,;|]+/, "");
+    if (cauda && line.slice(0, cm.index).match(/\d/)) {
+      const q = cauda.match(/(?:^|[\s,;|])(\d{1,3})\s*(?:pacotes?|volumes?|pcs?|un)?\s*$/i); if (q) out.pk = +q[1];
+      const bt = cauda.replace(/(?:^|[\s,;|])\d{1,3}\s*(?:pacotes?|volumes?|pcs?|un)?\s*$/i, "").replace(/[,;|]+/g, " ").trim(); if (bt && !/\d/.test(bt)) out.bairroTab = bt;
+      line = line.slice(0, cm.index);
+    } else line = line.replace(cm[0], " ");
+    line = line.replace(/\bcep\s*[:.]?\s*/i, " ");
+  }
+  // nome do local antes da rua ("DROGARIA ARAUJO - RUA DOS GOITACAZES, 1506")
+  const sm = line.match(/(?:^|[\s,;|\-–])((?:rua|r\.|av\.?|avenida|travessa|tv\.|alameda|al\.|estrada|rodovia|pra[cç]a|largo|beco)\s+\S)/i);
+  if (sm && sm.index > 0) {
+    const pre = line.slice(0, sm.index).replace(/[\s,;|\-–:]+$/, "").replace(/^\d{1,4}\s+(?=[A-Za-zÀ-ú])/, "").trim();
+    if (pre.length >= 3 && /[A-Za-zÀ-ú]{3}/.test(pre) && !/\b(na|no|em|para|pra|entregar|endere[cç]o)$/i.test(pre) && !/,\s*\d/.test(pre)) { out.client = titulo(pre); line = line.slice(sm.index).replace(/^[\s,;|\-–]+/, ""); }
+  }
   const pm = line.match(PHONE_RE); if (pm && digits(pm[1]).length >= 10) { out.phone = pm[1]; line = line.replace(pm[1], " "); }
   line = line.replace(/\s+/g, " ").replace(/[\s,\-–]+$/, "").trim();
   const m = line.match(/^([^,]*[A-Za-zÀ-ú.][^,]*),\s*(?:n[º°o]?\.?\s*|n[uú]mero\s*)?(\d{1,6}[A-Za-z]?|s\/?n[º°]?)(?=$|[\s,\-–/])[\s,\-–/]*(.*)$/i) || line.match(/^(.*?[A-Za-zÀ-ú.]\s*)[,\s]+(?:n[º°o]?\.?\s*|n[uú]mero\s*)?(\d{1,6}[A-Za-z]?|s\/?n[º°]?)(?=$|[\s,\-–/])[\s,\-–/]*(.*)$/i);
   let rest = "";
-  if (m) { out.street = m[1].replace(/[,\-–\s]+$/, "").trim(); out.num = /s\/?n/i.test(m[2]) ? "s/n" : m[2]; rest = m[3]; }
+  if (m) { out.street = m[1].replace(/[,\-–\s]+$/, "").trim(); out.num = /s\/?n/i.test(m[2]) ? "s/n" : m[2]; rest = m[3];
+    if (/,/.test(out.street) && !out.client) { const ps = out.street.split(/\s*,\s*/); out.street = ps.pop(); const nm = ps.join(" ").replace(/\s+(rua|avenida|av\.?)$/i, "").trim(); if (nm) out.client = titulo(nm); } }
   else { const parts = line.split(/\s*[,\-–]\s*/); out.street = parts.shift() || ""; rest = parts.join(", "); }
+  rest = tiraCidade(rest, out);
   const parts = rest.split(/\s*(?:[,–;]|\s-\s)\s*/).map(p => p.trim()).filter(Boolean);
   const comp = [], other = [];
-  parts.forEach(p => (COMP_RE.test(p) ? comp : other).push(p));
+  parts.forEach(p => {
+    if (!COMP_RE.test(p)) { other.push(p); return; }
+    const c2 = p.match(COMP_RE2); // "APTO 401 CARLOS PRATES" → complemento + bairro
+    if (c2 && c2[0].trim().length < p.length && /^[A-Za-zÀ-ú]/.test(p.slice(c2[0].length).trim())) { comp.push(c2[0].trim()); other.push(p.slice(c2[0].length).trim()); }
+    else comp.push(p);
+  });
   out.comp = comp.join(", ");
   const uf = other.findIndex(p => /^[A-Za-zÀ-ú\s.']+\s*[\/-]\s*[A-Z]{2}$/.test(p) || /^[A-Z]{2}$/.test(p));
   if (uf >= 0) { if (/^[A-Z]{2}$/.test(other[uf]) && uf > 0) { out.city = other[uf - 1] + " - " + other[uf]; other.splice(uf - 1, 2); } else { out.city = other[uf].replace(/\s*\/\s*/, " - "); other.splice(uf, 1); } }
   if (other.length) out.bairro = other.join(", ");
+  if (out.bairroTab) { if (!out.bairro) out.bairro = out.bairroTab; delete out.bairroTab; }
+  out.bairro = titulo(out.bairro); out.comp = titulo(out.comp); out.street = titulo(out.street);
   out.street = out.street.replace(/^r\.\s/i, "Rua ").replace(/^av\.?\s/i, "Avenida ").replace(/^tv\.?\s/i, "Travessa ").replace(/^al\.\s/i, "Alameda ");
   out.street = out.street.charAt(0).toUpperCase() + out.street.slice(1);
   return out;
@@ -353,13 +401,13 @@ function extractAddresses(text) {
   const blocks = []; const seen = new Set();
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
-    const isStreet = STREET_RE.test(l) && /\d|s\/n/i.test(l + " " + (lines[i + 1] || ""));
+    const isStreet = (STREET_RE.test(l) && /\d|s\/n/i.test(l + " " + (lines[i + 1] || ""))) || (CEP_RE.test(l) && /[A-Za-zÀ-ú]{3}[^,]*,\s*\d{1,5}\b/.test(l));
     if (!isStreet) continue;
     let block = l;
     if (!/\d/.test(l) && lines[i + 1] && /^\d|^n[º°o]/i.test(lines[i + 1])) { block += ", " + lines[++i]; }
     for (let k = 1; k <= 3 && i + 1 < lines.length; k++) {
       const nx = lines[i + 1];
-      if (STREET_RE.test(nx)) break;
+      if (STREET_RE.test(nx) || CEP_RE.test(block)) break;
       if (CEP_RE.test(nx) || COMP_RE.test(nx) || /\b[A-Z]{2}\b\s*$/.test(nx) || /^bairro/i.test(nx) || /^(cidade|munic)/i.test(nx)) { block += " - " + nx.replace(/^(bairro|cidade|complemento|munic[ií]pio)\s*[:\-]\s*/i, ""); i++; } else break;
     }
     const key = block.toLowerCase(); if (seen.has(key)) continue; seen.add(key);
@@ -1053,21 +1101,67 @@ function confirmImport({ fica = false } = {}) {
 }
 
 /* ===================== entrada: foto / print (OCR) ===================== */
+/* Prepara a foto para ler TODOS os endereços: mantém a letra grande (amplia print pequeno,
+   não encolhe foto grande demais), deixa em cinza com contraste e corta listas compridas em
+   faixas nos espaços em branco entre as linhas, para nenhuma linha ficar pequena demais. */
+async function prepararFotoOcr(file) {
+  const img = await new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = URL.createObjectURL(file); });
+  const W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+  let k = 2200 / W; if (W < 1100) k = Math.min(3, 2200 / W); k = Math.max(Math.min(k, 3), 0.25);
+  const cw = Math.round(W * k), ch = Math.round(H * k);
+  const c = document.createElement("canvas"); c.width = cw; c.height = ch;
+  const g = c.getContext("2d", { willReadFrequently: true }); g.imageSmoothingQuality = "high"; g.drawImage(img, 0, 0, cw, ch);
+  // cinza + contraste automático
+  const d = g.getImageData(0, 0, cw, ch), px = d.data, hist = new Uint32Array(256);
+  for (let i = 0; i < px.length; i += 4) { const y = (px[i] * 299 + px[i + 1] * 587 + px[i + 2] * 114) / 1000 | 0; px[i] = y; hist[y]++; }
+  const tot = cw * ch; let lo = 0, hi = 255, acc = 0; while (lo < 255 && (acc += hist[lo]) < tot * .01) lo++; acc = 0; while (hi > 0 && (acc += hist[hi]) < tot * .01) hi--;
+  const esc2 = hi - lo > 30 ? 255 / (hi - lo) : 1;
+  const linha = new Float64Array(ch);
+  for (let i = 0, n = 0; i < px.length; i += 4, n++) { let y = (px[i] - lo) * esc2; y = y < 0 ? 0 : y > 255 ? 255 : y; px[i] = px[i + 1] = px[i + 2] = y; linha[(n / cw) | 0] += 255 - y; }
+  g.putImageData(d, 0, 0);
+  // fatias de ~1600 px cortadas na linha mais "vazia" (entre uma linha de texto e outra)
+  const faixas = []; const ALVO = 1600;
+  let y0 = 0;
+  while (y0 < ch) {
+    let y1 = Math.min(ch, y0 + ALVO);
+    if (y1 < ch) { let melhor = y1, min = Infinity; for (let y = y1; y > y0 + ALVO * .6; y--) { if (linha[y] < min) { min = linha[y]; melhor = y; } } y1 = melhor; }
+    const f = document.createElement("canvas"); f.width = cw; f.height = y1 - y0;
+    f.getContext("2d").drawImage(c, 0, y0, cw, y1 - y0, 0, 0, cw, y1 - y0);
+    faixas.push(f); y0 = y1;
+  }
+  URL.revokeObjectURL(img.src);
+  return faixas;
+}
+let ocrWorker = null;
+async function workerOcr(onProg) {
+  await loadScript(LIBS.ocr);
+  if (!ocrWorker) ocrWorker = await Tesseract.createWorker("por", 1, { logger: m => { if (m.status === "recognizing text" && ocrWorker && ocrWorker.__prog) ocrWorker.__prog(m.progress); } });
+  ocrWorker.__prog = onProg; return ocrWorker;
+}
+const chaveEnd = a => [a.street, a.num, a.comp, a.cep].map(x => norm(x || "")).join("|");
 async function handleOcr(files) {
   const status = $("#ocrStatus"); status.hidden = false;
   try {
     status.textContent = "Preparando leitura de texto (na primeira vez baixa uns 10 MB)...";
-    await loadScript(LIBS.ocr);
-    let text = "";
+    const todos = []; const vistos = new Set();
     for (let i = 0; i < files.length; i++) {
-      const img = await compressPhoto(files[i]);
-      const r = await Tesseract.recognize(img, "por", { logger: m => { if (m.status === "recognizing text") status.textContent = `Lendo imagem ${i + 1} de ${files.length}: ${Math.round(m.progress * 100)}%`; } });
-      text += "\n" + r.data.text;
+      const faixas = await prepararFotoOcr(files[i]);
+      const nome = files.length > 1 ? `foto ${i + 1} de ${files.length}` : "foto";
+      let texto = "";
+      for (let f = 0; f < faixas.length; f++) {
+        const w = await workerOcr(pr => { status.textContent = `Lendo ${nome}${faixas.length > 1 ? `, parte ${f + 1} de ${faixas.length}` : ""}: ${Math.round(pr * 100)}% · ${todos.length} endereço(s) até agora`; });
+        await w.setParameters({ tessedit_pageseg_mode: "3", preserve_interword_spaces: "1" });
+        let r = (await w.recognize(faixas[f])).data.text;
+        // tabela: se tem mais CEPs que endereços achados, tenta de novo lendo linha por linha
+        const ceps = (r.match(/\b\d{5}-?\d{3}\b/g) || []).length, achou = extractAddresses(r).length;
+        if (ceps > achou) { await w.setParameters({ tessedit_pageseg_mode: "6" }); const r6 = (await w.recognize(faixas[f])).data.text; if (extractAddresses(r6).length > achou) r = r6; }
+        texto += "\n" + r;
+      }
+      extractAddresses(texto).forEach(a => { const k = chaveEnd(a); if (!vistos.has(k) || a.client) { vistos.add(k); todos.push(a); } });
     }
-    const found = extractAddresses(text);
-    status.textContent = found.length ? "Leitura concluída. Confira abaixo." : "Não achei endereço na imagem. Tente uma foto mais de perto, com boa luz.";
-    showImport(found, "foto");
-  } catch (e) { status.textContent = e.message || "Não consegui ler a imagem."; }
+    status.textContent = todos.length ? `Li ${todos.length} endereço(s). Confira abaixo.` : "Não achei endereço na imagem. Tente uma foto mais de perto, com boa luz.";
+    showImport(todos, "foto");
+  } catch (e) { status.textContent = (e && e.message) || "Não consegui ler a imagem."; }
 }
 
 /* ===================== entrada: planilha / PDF / TXT ===================== */
@@ -1083,6 +1177,7 @@ function rowsToAddresses(rows) {
   rows = rows.filter(r => r && r.some(c => String(c ?? "").trim()));
   let hi = -1, map2 = {};
   for (let i = 0; i < Math.min(8, rows.length); i++) {
+    if (rows[i].some(c => CEP_RE.test(String(c ?? "")) || /[A-Za-zÀ-ú]{3}.*,\s*\d/.test(String(c ?? "")))) continue; // linha de dados, não cabeçalho
     const m = {}; rows[i].forEach((c, j) => { const h = String(c ?? "").trim(); if (!h) return; for (const k of COL_ORDEM) { const re = COLS[k]; if (m[k] == null && !Object.values(m).includes(j) && re.test(h)) { m[k] = j; break; } } });
     if (m.street != null || m.cep != null || (m.lat != null && m.lng != null)) { hi = i; map2 = m; break; }
   }
@@ -1099,7 +1194,7 @@ function rowsToAddresses(rows) {
     if (a.street && (!a.num || /,/.test(a.street))) { const p = parseAddressLine(a.street); a = { ...a, street: p.street, num: a.num || p.num || "s/n", comp: a.comp || p.comp, bairro: a.bairro || p.bairro, city: a.city || p.city, cep: a.cep || p.cep }; }
     if (a.cep && digits(a.cep).length <= 8) a.cep = digits(a.cep).padStart(8, "0").replace(/(\d{5})(\d{3})/, "$1-$2");
     const lat = coord(g("lat"), 90), lng = coord(g("lng"), 180);
-    const o = { ...a, client: g("client"), phone: g("phone"), code: g("code"), pk: +g("pk") || 1, ref: g("ref") };
+    const o = { ...a, street: titulo(a.street), bairro: titulo(a.bairro), comp: titulo(a.comp), client: titulo(g("client")), phone: g("phone"), code: g("code"), pk: +g("pk") || 1, ref: g("ref") };
     if (lat != null && lng != null && lat < 6 && lat > -34 && lng < -28 && lng > -74) { o.lat = lat; o.lng = lng; } // ponto já vem na planilha: nem precisa procurar no mapa
     return o;
   }).filter(a => a.street || a.cep || a.lat != null);
@@ -3021,5 +3116,5 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
 })();
 
 // para testes automáticos
-window.DeliveRota = { map: () => map, previsao, inicioFimSheet, fimPt, comecarRota, trocarAlvoNav, empacotar, desempacotar, receberRotaDoLink, adicionarRapido, lerNotinha, gastoSheet, periodData, acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
+window.DeliveRota = { handleOcr, map: () => map, previsao, inicioFimSheet, fimPt, comecarRota, trocarAlvoNav, empacotar, desempacotar, receberRotaDoLink, adicionarRapido, lerNotinha, gastoSheet, periodData, acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
 })();

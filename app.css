@@ -687,3 +687,4 @@ body.navon .leaflet-control-attribution{margin-bottom:calc(186px + env(safe-area
 body.navon #toast{bottom:calc(260px + env(safe-area-inset-bottom,0px))!important}
 .navfoot .btn.sm{white-space:nowrap;font-size:13.5px;gap:4px;padding:0 8px}
 .navfoot .btn.sm{white-space:nowrap;font-size:13.5px;gap:4px;padding:0 8px}
+@media (max-height:700px){.inifim{margin:2px 0 0;padding:3px 10px;font-size:12px;flex-wrap:nowrap}.inifim span{max-width:44%}}
