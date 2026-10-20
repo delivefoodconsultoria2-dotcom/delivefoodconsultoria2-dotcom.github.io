@@ -81,17 +81,44 @@ function previsao(list) {
   const reta = routeKm(list, lastPoint());
   let fator = 1.35; if (osrmKm && reta > 0.3) fator = Math.min(2.2, Math.max(1.05, osrmKm / reta));
   let p = (NV.on && NV.eu) ? NV.eu : (ondeEstou && Date.now() - ondeEstou.t < 20 * 60000 ? ondeEstou : lastPoint());
-  let t = Date.now(), km = 0; const itens = [];
-  list.forEach(s => { const d = p ? hav(p, s) * fator : 0; km += d; t += d / v * 3600000; itens.push({ s, t, km }); t += para; p = s; });
+  let t = Date.now(), km = 0; const itens = []; let pausou = false, pausaEm = null;
+  const pz = st.pausa && st.pausa.on ? st.pausa : null;
+  const naJanela = tt => { if (!pz) return false; const d = new Date(tt), m = d.getHours() * 60 + d.getMinutes(); const [h1, m1] = (pz.de || "00:00").split(":").map(Number), [h2, m2] = (pz.ate || "23:59").split(":").map(Number); return m >= h1 * 60 + m1 && m <= h2 * 60 + m2; };
+  list.forEach(s => { const d = p ? hav(p, s) * fator : 0; km += d; t += d / v * 3600000; itens.push({ s, t, km }); t += para; p = s;
+    if (pz && !pausou && naJanela(t)) { pausou = true; pausaEm = { depois: s, t }; t += (pz.min || 30) * 60000; } });
   const fp = fimPt(); let kmFim = 0; if (fp && p) { kmFim = hav(p, fp) * fator; km += kmFim; t += kmFim / v * 3600000; }
-  return { itens, fim: t, km, volta: !!fp };
+  return { itens, fim: t, km, volta: !!fp, kmVolta: kmFim, pausaEm };
 }
 function nomePonto(x, vazio) { return x ? (x.label || "Endereço escolhido") : vazio; }
+function pausaSheet() {
+  const pz = st.pausa || { on: false, min: 30, de: "11:00", ate: "14:00" };
+  sheet(`<h3>Pausa na rota</h3><p class="sub">Separe um tempo para almoço ou descanso. O app soma a pausa no horário de término e no horário de cada parada.</p>
+    <label class="check"><input type="checkbox" id="pzOn" ${pz.on ? "checked" : ""}> Fazer uma pausa</label>
+    <div class="field"><label>Quanto tempo</label><div class="seg" id="pzMin">${[15, 30, 45, 60].map(m => `<button aria-pressed="${pz.min === m}" data-m="${m}">${m} min</button>`).join("")}</div></div>
+    <div class="grid2"><div class="field"><label for="pzDe">Entre</label><input type="time" id="pzDe" value="${pz.de}"></div><div class="field"><label for="pzAte">e</label><input type="time" id="pzAte" value="${pz.ate}"></div></div>
+    <button class="btn primary big" id="pzOk">Salvar</button>`, bg => {
+    let min = pz.min;
+    bg.querySelectorAll("#pzMin button").forEach(b => b.addEventListener("click", () => { min = +b.dataset.m; bg.querySelectorAll("#pzMin button").forEach(x => x.setAttribute("aria-pressed", x === b)); bg.querySelector("#pzOn").checked = true; }));
+    bg.querySelector("#pzOk").addEventListener("click", () => { st.pausa = { on: bg.querySelector("#pzOn").checked, min, de: bg.querySelector("#pzDe").value || "11:00", ate: bg.querySelector("#pzAte").value || "14:00" }; save(); closeSheet(); renderAll(false); toast(st.pausa.on ? `Pausa de ${min} min entre ${st.pausa.de} e ${st.pausa.ate}` : "Sem pausa"); });
+  });
+}
+/* topo da lista de paradas, igual ao Circuit: configuração da rota (início, fim, pausa) */
+function configRotaHTML(pv) {
+  const fimTxt = st.end ? nomePonto(st.end) : (st.settings.roundTrip && st.start ? "Voltar ao início" : "Termina na última entrega");
+  const pz = st.pausa && st.pausa.on ? st.pausa : null, n = pending().length;
+  return `<div class="cfgrota">
+    <div class="cr-tit"><span>${st.stops.length} parada${st.stops.length > 1 ? "s" : ""}${n && n < st.stops.length ? ` · faltam ${n}` : ""}</span><b>${esc(st.rotaNome || ("Rota de " + new Date().toLocaleDateString("pt-BR")))}</b>${n ? `<em>Término ~${hhmm(pv.fim)} · ${km1(pv.km)} km${pv.volta ? " com a volta" : ""}</em>` : ""}</div>
+    <div class="cr-h">Configuração da rota</div>
+    <button class="cr-row" data-act="inifim"><span class="cr-t">${hhmm(Date.now())}</span><span class="cr-x"><b>${st.start ? "Iniciar em " + esc(nomePonto(st.start)) : "Iniciar no local atual"}</b><em>${st.start ? "Ponto de saída escolhido" : "Usa a posição do GPS ao otimizar"}</em></span><i class="cr-ic">🏠</i></button>
+    <button class="cr-row" data-act="inifim"><span class="cr-t">${st.end || (st.settings.roundTrip && st.start) ? hhmm(pv.fim) : "•"}</span><span class="cr-x"><b>${st.end || (st.settings.roundTrip && st.start) ? "Finalizar em " + esc(fimTxt) : "Finalizar na última entrega"}</b><em>${st.end || (st.settings.roundTrip && st.start) ? `Volta de ~${km1(pv.kmVolta)} km depois da última entrega · <b class="naopaga">não é paga</b>` : "Toque para escolher o ponto final (galpão, casa...)"}</em></span><i class="cr-ic">🏁</i></button>
+    <button class="cr-row" data-act="pausa"><span class="cr-t">${pz ? pz.min + "m" : "—"}</span><span class="cr-x"><b>${pz ? "Pausa" : "Sem pausa"}</b><em>${pz ? `${pz.min} min · Entre ${pz.de} e ${pz.ate}${pv.pausaEm ? " · por volta de " + hhmm(pv.pausaEm.t) : ""}` : "Toque para adicionar almoço ou descanso"}</em></span><i class="cr-ic">☕</i></button>
+    <div class="cr-h">Paradas</div></div>`;
+}
 function inicioFimSheet() {
   const fimTxt = st.end ? nomePonto(st.end) : (st.settings.roundTrip && st.start ? "Voltar ao início" : "Termina na última entrega");
-  sheet(`<h3>Início e fim da rota</h3><p class="sub">O app organiza a ordem e calcula o horário de término contando a volta.</p>
+  sheet(`<h3>Início e fim da rota</h3><p class="sub">O app organiza a ordem e calcula o horário de término contando a volta. <b>Atenção:</b> a volta para casa ou para o galpão não é remunerada, ela só entra no tempo e nos km, para você saber a hora que chega.</p>
     <h4 class="cfg-h">Começo da rota</h4><div class="sub" style="margin-bottom:6px"><b>${esc(nomePonto(st.start, "Onde você estiver"))}</b></div>
-    <div class="row wrap"><button class="btn ghost sm" id="ifIniGps">Minha localização</button><button class="btn ghost sm" id="ifIniMapa">Escolher no mapa</button></div>
+    <div class="row wrap"><button class="btn ghost sm" id="ifIniAtual">Onde eu estiver (GPS)</button><button class="btn ghost sm" id="ifIniGps">Minha localização agora</button><button class="btn ghost sm" id="ifIniMapa">Escolher no mapa</button></div>
     <div class="row" style="margin-top:6px"><input class="busca" id="ifIniTxt" placeholder="Ou digite o endereço de saída" style="margin:0;flex:1"><button class="btn primary sm" id="ifIniOk">OK</button></div>
     <h4 class="cfg-h">Fim da rota</h4><div class="sub" style="margin-bottom:6px"><b>${esc(fimTxt)}</b></div>
     <div class="row wrap"><button class="btn ghost sm" id="ifFimNao">Termina na última entrega</button><button class="btn ghost sm" id="ifFimIni">Voltar ao início</button><button class="btn ghost sm" id="ifFimGps">Minha localização</button><button class="btn ghost sm" id="ifFimMapa">Escolher no mapa</button></div>
@@ -101,6 +128,7 @@ function inicioFimSheet() {
     const aplica = msg => { save(); if (pending().filter(hasGeo).length >= 2) optimize({ quieto: true }); else renderAll(true); toast(msg); inicioFimSheet(); };
     const gps = cb => { if (!navigator.geolocation) return toast("Este aparelho não informa a localização"); toast("Buscando sua localização..."); navigator.geolocation.getCurrentPosition(p2 => { ondeEstou = { lat: p2.coords.latitude, lng: p2.coords.longitude, t: Date.now() }; cb({ lat: p2.coords.latitude, lng: p2.coords.longitude, label: "Minha localização" }); }, () => toast("Libere a permissão de localização."), { enableHighAccuracy: true, timeout: 15000 }); };
     const busca = async (txt, cb) => { txt = (txt || "").trim(); if (!txt) return toast("Digite o endereço"); toast("Procurando o endereço..."); const a = parseAddressLine(txt) || {}; const g = await photon({ street: a.street || txt, num: a.num || "", bairro: a.bairro || "", city: st.settings.city }) || await nominatim({ q: txt + ", " + (st.settings.city || "").split(" - ")[0] }); if (!g) return toast("Não achei esse endereço. Tente com o número e o bairro."); cb({ lat: g.lat, lng: g.lng, label: txt }); };
+    q("#ifIniAtual").addEventListener("click", () => { st.start = null; aplica("Início: onde você estiver ao começar"); });
     q("#ifIniGps").addEventListener("click", () => gps(x => { st.start = x; aplica("Início: sua localização"); }));
     q("#ifIniMapa").addEventListener("click", () => { closeSheet(); go("rota"); setPinMode("start"); });
     q("#ifIniOk").addEventListener("click", () => busca(q("#ifIniTxt").value, x => { st.start = x; aplica("Início definido"); }));
@@ -874,9 +902,11 @@ function renderList() {
   const q = searchQ.toLowerCase();
   const rows = st.stops.filter(s => (st.filter === "all" || s.status === st.filter) && (!q || [s.street, s.num, s.client, s.code, s.bairro].join(" ").toLowerCase().includes(q)));
   if (!rows.length) { $("#list").innerHTML = `<p class="sub" style="padding:20px 0">${st.stops.length ? "Nenhuma parada encontrada." : "Nenhuma parada ainda. Vá em Adicionar."}</p>`; return; }
-  $("#list").innerHTML = rows.map(s => `<div class="item ${s.status}${highlight === s.id ? " hl" : ""}" id="it-${s.id}">
-    <span class="badge${s.status === "delivered" ? "" : gCls(s)}">${s.status === "delivered" ? "✓" : stopNumber(s)}</span>
-    <div class="item-main" data-open="${s.id}"><b>${esc(addrLine(s))}</b>${gNum(s) && s.status === "pending" ? ` <span class="gdot g${gNum(s)}">Rota ${s.grupo + 1}</span>` : ""}<span>${esc([s.comp, s.bairro, s.client, s.code].filter(Boolean).join(" · ") || "—")}</span>
+  const pv = previsao(); const eta = new Map(pv.itens.map(o => [o.s, o.t]));
+  const topo = !q && (st.filter === "all" || st.filter === "pending") ? configRotaHTML(pv) : "";
+  $("#list").innerHTML = topo + rows.map(s => `<div class="item ${s.status}${highlight === s.id ? " hl" : ""}" id="it-${s.id}">
+    <span class="badge-col"><span class="badge${s.status === "delivered" ? "" : gCls(s)}">${s.status === "delivered" ? "✓" : stopNumber(s)}</span>${eta.has(s) ? `<em class="eta">${hhmm(eta.get(s))}</em>` : ""}</span>
+    <div class="item-main" data-open="${s.id}"><b>${esc(addrLine(s))}</b>${gNum(s) && s.status === "pending" ? ` <span class="gdot g${gNum(s)}">Rota ${s.grupo + 1}</span>` : ""}<span>${esc([s.comp, s.bairro, s.client, s.code].filter(Boolean).join(" · ") || "—")}</span>${st.ordemPlanilha && s.foraSeq && s.status === "pending" ? `<span class="pill bad">Fora da sequência</span>` : (s.seq && st.ordemPlanilha ? `<span class="pill win">Seq. ${esc(s.seq)}</span>` : "")}
       ${s.status === "delivered" ? `<span class="pill ok">Entregue ${s.doneAt ? new Date(s.doneAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}${s.photo ? " · com foto" : ""}</span>` : ""}
       ${s.status === "failed" ? `<span class="pill bad">${esc(s.reason)}</span>` : ""}
       ${s.prio && s.status === "pending" ? `<span class="pill bad">Prioridade</span>` : ""}
@@ -1624,7 +1654,7 @@ function navListaSheet() {
   const pv = previsao();
   sheet(`<h3>Paradas da rota</h3><p class="sub">Término ${hhmm(pv.fim)} · ${pv.itens.length} paradas · ${km1(pv.km)} km${pv.volta ? " com a volta" : ""}</p>
     <div class="anlist navlista">${pv.itens.map(o => `<button data-np="${o.s.id}" class="${NV.alvo === o.s ? "alvo" : ""}"><span class="nl-n">${stopNumber(o.s)}<em>${hhmm(o.t)}</em></span><span class="nl-t"><b>${esc(addrLine(o.s))}</b><em>${esc([o.s.comp, o.s.client, o.s.bairro].filter(Boolean).join(" · "))}</em></span></button>`).join("")}
-    ${fimPt() ? `<div class="nl-fim"><span class="nl-n">🏠<em>${hhmm(pv.fim)}</em></span><span class="nl-t"><b>${esc(st.end ? nomePonto(st.end) : "Volta ao início")}</b><em>Fim da rota</em></span></div>` : ""}</div>
+    ${fimPt() ? `<div class="nl-fim"><span class="nl-n">🏠<em>${hhmm(pv.fim)}</em></span><span class="nl-t"><b>${esc(st.end ? nomePonto(st.end) : "Volta ao início")}</b><em>Fim da rota · volta de ~${km1(pv.kmVolta)} km, não é paga</em></span></div>` : ""}</div>
     <button class="btn ghost" id="nlFecha" style="width:100%;margin-top:10px">Voltar ao mapa</button>`, bg => {
     bg.querySelectorAll("[data-np]").forEach(b => b.addEventListener("click", () => { const x = byId(b.dataset.np); closeSheet(); if (x) navParadaSheet(x); }));
     bg.querySelector("#nlFecha").addEventListener("click", closeSheet);
@@ -3096,6 +3126,7 @@ document.addEventListener("click", e => {
   if (d.act === "cancelroute") cancelarRota(t);
   if (d.act === "inifim") inicioFimSheet();
   if (d.act === "ordem") ordemSheet();
+  if (d.act === "pausa") pausaSheet();
   if (d.act === "desistir") desistirEComecar();
   if (d.act === "gasto") gastoSheet();
   if (d.gasto) gastoSheet((st.gastos || []).find(g => g.id === d.gasto));

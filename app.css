@@ -715,3 +715,16 @@ body.navon .navver{display:grid;place-items:center;position:absolute;right:12px;
 /* nome do bairro escrito no mapa */
 .bairrolbl{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;pointer-events:none;text-align:center;font-weight:900;font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:#0E6E37;text-shadow:0 0 3px #fff,0 0 6px #fff,0 0 10px #fff;opacity:.92;display:flex;flex-direction:column;align-items:center;line-height:1.05}
 .bairrolbl small{font-size:10.5px;letter-spacing:0;text-transform:none;font-weight:800;color:#1f2a24}
+
+/* topo da lista: configuração da rota */
+.cfgrota{margin:0 0 6px}
+.cr-tit{display:flex;flex-direction:column;padding:4px 2px 12px}
+.cr-tit span{font-size:13px;color:var(--muted);font-weight:700}.cr-tit b{font-size:20px;line-height:1.2}.cr-tit em{font-style:normal;font-size:13px;color:var(--green-strong);font-weight:800;margin-top:2px}
+.cr-h{background:var(--surface-2);color:var(--muted);font-size:13px;font-weight:800;padding:8px 12px;margin:0 -2px;border-radius:10px}
+.cr-row{display:flex;align-items:center;gap:12px;width:100%;border:0;border-bottom:1px solid var(--line);background:none;color:var(--ink);font:inherit;text-align:left;padding:12px 4px;cursor:pointer}
+.cr-t{flex:none;width:46px;font-size:13px;color:var(--muted);font-weight:800;text-align:center}
+.cr-x{flex:1;min-width:0;display:flex;flex-direction:column}.cr-x b{font-size:15px}.cr-x em{font-style:normal;font-size:12.5px;color:var(--muted)}
+.cr-ic{flex:none;width:36px;height:36px;border-radius:10px;background:var(--green-soft,#E6F6EC);display:grid;place-items:center;font-style:normal}
+.badge-col{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none}
+.badge-col .eta{font-style:normal;font-size:11px;color:var(--muted);font-weight:800}
+.naopaga{color:#B54708;font-weight:800}
