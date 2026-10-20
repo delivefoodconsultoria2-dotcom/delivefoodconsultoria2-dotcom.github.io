@@ -782,11 +782,11 @@ function renderNext0() {
   const later = p.slice(1, 4);
   const novas = st.otimizada === false ? p.filter(x => x.grupo && x.grupo === Math.max(...p.map(y => y.grupo || 0))).length : 0;
   box.innerHTML = `${novas ? `<div class="novas g${gNum(p.find(x => x.grupo === Math.max(...p.map(y => y.grupo || 0))))}"><div><b>+${novas} parada${novas > 1 ? "s" : ""} nova${novas > 1 ? "s" : ""}</b><span>Junte com o resto da rota</span></div><button class="btn dark" data-act="optall"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>Otimizar tudo</button></div>` : ""}<div class="next">
-    <div class="next-top"><span class="next-num${gCls(s)}">${stopNumber(s)}</span>
-      <div class="next-lbl"><span>Próxima entrega</span><em>${dist ? km1(dist) + " km · ~" + mins + " min" : "Toque em navegar para ir"}${p.length > 1 ? " · depois mais " + (p.length - 1) : ""}</em></div></div>
-    <div class="addr">${esc(addrLine(s))}</div>
-    ${perto.length ? `<div class="perto"><b>Pertinho desta entrega</b>${perto.map(x => `<div class="perto-row"><span class="badge${gCls(x)}">${stopNumber(x)}</span><span class="perto-t">${esc(addrLine(x))}<em>${Math.round(hav(s, x) * 1000)} m</em></span><button class="btn ghost sm" data-junto="${x.id}">Fazer junto</button></div>`).join("")}</div>` : ""}
-    <div class="sub">${esc([s.comp || "Sem complemento", s.bairro, s.client].filter(Boolean).join(" · "))}</div>
+    <div class="nx-h"><span class="next-num${gCls(s)}">${stopNumber(s)}</span>
+      <div class="nx-t"><span class="nx-lbl">Próxima entrega · ${dist ? km1(dist) + " km · ~" + mins + " min" : "toque em navegar"}${p.length > 1 ? " · +" + (p.length - 1) : ""}</span>
+        <div class="addr">${esc(addrLine(s))}</div>
+        <div class="sub">${esc([s.comp, s.bairro, s.client].filter(Boolean).join(" · ") || "Sem complemento")}</div></div></div>
+    ${perto.length ? `<div class="perto2"><span>Pertinho:</span>${perto.map(x => `<button class="pchip" data-junto="${x.id}" title="Fazer junto: ${esc(addrLine(x))}"><i>${stopNumber(x)}</i>${esc(x.street.replace(/^(rua|avenida|av\.?|r\.)\s+/i, ""))}${x.num ? " " + esc(x.num) : ""}<em>${Math.round(hav(s, x) * 1000)} m</em><b>+</b></button>`).join("")}</div>` : ""}
     <div class="facts">
       ${gTag(s)}<span class="fact">${s.pk} ${s.pk > 1 ? "pacotes" : "pacote"}</span>
       ${s.code ? `<span class="fact mono">${esc(s.code)}</span>` : ""}
@@ -809,7 +809,7 @@ function renderNext0() {
       </div>
     </div></div>
     ${later.length ? `<div class="later"><h3>A seguir</h3>${later.map(x => `<div class="later-row" data-open="${x.id}"><span class="badge${gCls(x)}">${stopNumber(x)}</span><div><b>${esc(addrLine(x))}</b><span>${esc([x.comp, x.bairro, x.client].filter(Boolean).join(" · ") || "—")}</span></div></div>`).join("")}</div>` : ""}
-    <div class="minis">${p.length > 1 ? `<a class="mini" target="_blank" rel="noopener" href="${fullRouteLink()}">Próximas ${Math.min(p.length, 10)} no Google Maps</a>` : ""}<button class="mini bad" data-act="cancelroute">Cancelar rota</button></div>`;
+    <div class="minis">${p.length > 1 ? `<a class="minib" target="_blank" rel="noopener" href="${fullRouteLink()}">Próximas ${Math.min(p.length, 10)} no Google Maps</a>` : ""}<button class="minib bad" data-act="cancelroute">Cancelar rota</button></div>`;
 }
 /* ---------- fluxo simples: carregar → otimizar sozinho → começar → cancelar ---------- */
 function rotaComecou() { return !!st.started || st.stops.some(s => s.status !== "pending"); }
