@@ -524,7 +524,7 @@ h2.sec{font-size:24px}
 .cta-box.ready .legenda{margin:0 0 10px}
 .cta-box.ready .btn.cta{min-height:70px;font-size:21px}
 .cta-box.ready .ok-txt{margin:8px 0 0;font-size:13.5px}
-.cta-box.ready .addmore{width:100%;min-height:54px;margin-top:10px;border-radius:16px;font-size:16px;gap:8px}
+.cta-box.ready .addmore{width:100%;min-height:50px;margin-top:8px;border-radius:16px;font-size:16px;gap:8px}
 .cta-box.ready .link-btn{display:block;margin:2px auto 0;padding:10px 8px 6px}
 @media (max-width:899px){
   body.pronta .mapcol{height:24vh}
@@ -636,7 +636,7 @@ body.navon .qbar{display:none}
   body.mapa.navon[data-tab="rota"]:not(.folha-cheia) .panel{max-height:min(var(--folha,30vh),30vh)}
   body.mapa[data-tab="rota"] .folha-alca{display:flex;justify-content:center;position:sticky;top:0;z-index:5;width:calc(100% + 28px);margin:0 -14px 2px;height:26px;border:0;background:var(--surface);cursor:pointer;padding-top:9px}
   body.mapa[data-tab="rota"] .folha-alca i{width:44px;height:5px;border-radius:9px;background:var(--line)}
-  body.mapa[data-tab="rota"] .cta-box.ready{background:none;padding-top:4px}
+  body.mapa[data-tab="rota"] .cta-box.ready{background:none;padding-top:0}
   body.mapa[data-tab="rota"] .map-actions{bottom:34px}
   body.mapa[data-tab="rota"] .navban{top:10px}
   body.mapa[data-tab="rota"] .navfoot{bottom:34px}
@@ -646,7 +646,7 @@ body.navon .qbar{display:none}
   body.mapa[data-tab="rota"] .cta-box.ready .ready-num b{font-size:24px}
   body.mapa[data-tab="rota"] .cta-box.ready .ready-st:not(.busy){display:none}
   body.mapa[data-tab="rota"] .cta-box.ready .ready-st.busy{margin:6px 0 8px}
-  body.mapa[data-tab="rota"] .cta-box.ready .ready-line{margin-bottom:10px}
+  body.mapa[data-tab="rota"] .cta-box.ready .ready-line{margin-bottom:5px}
   body.mapa[data-tab="rota"] .cta-box.ready .btn.cta{min-height:58px;font-size:20px}
   body.mapa[data-tab="rota"] .cta-box.ready .addmore{min-height:46px;margin-top:8px}
   body.mapa[data-tab="rota"] .cta-box.ready>.link-btn{display:none}
@@ -812,3 +812,19 @@ body.navon .navver{display:grid;place-items:center;position:absolute;right:12px;
 .day-info .mini{font-size:12.5px;gap:2px 10px}
 .dayx{margin:-4px 0 10px}.dayx .gasto-mini,.dayx select,.goal-set{min-height:38px!important;font-size:13px!important}
 @media (max-width:899px){body.mapa .helpfab{display:none}}
+
+/* X de fechar padrão em todas as folhas */
+.sheet-x{position:absolute;top:10px;right:10px;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:18px;font-weight:800;line-height:1;cursor:pointer;z-index:3;display:grid;place-items:center}
+.sheet-x:active{background:var(--surface-2)}
+.sheet{position:relative}
+/* linhas de configuração bem visíveis no cartão da rota (início/fim, ordem) */
+.setup-row{display:flex;align-items:center;gap:8px;width:100%;margin:5px 0 0;padding:4px 10px;min-height:36px;border:1px solid color-mix(in srgb,var(--green) 30%,var(--line));border-radius:13px;background:color-mix(in srgb,var(--green) 6%,var(--surface));color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.setup-row:active{background:color-mix(in srgb,var(--green) 12%,var(--surface))}
+.setup-row .su-ic{flex:none;width:26px;height:26px;border-radius:8px;font-size:15px!important;background:var(--green-soft,#E6F6EC);display:grid;place-items:center;font-size:16px}
+.setup-row>b{flex:none;font-size:14px}
+.setup-row>em{flex:1;min-width:0;font-style:normal;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.setup-row .su-go{flex:none;font-style:normal;font-size:20px;color:var(--green-strong);font-weight:700}
+/* atalho compacto de início/fim durante a rota */
+.setup-mini{display:flex;align-items:center;gap:8px;width:100%;margin:2px 0 8px;padding:8px 12px;border:1px dashed color-mix(in srgb,var(--green) 35%,var(--line));border-radius:12px;background:none;color:var(--muted);font:inherit;font-size:12.5px;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.setup-mini b{color:var(--ink);font-weight:700;overflow:hidden;text-overflow:ellipsis}
+.setup-mini i{margin-left:auto;font-style:normal;color:var(--green-strong);font-size:18px}

@@ -514,7 +514,7 @@ function newStop(o) {
   o = limparEndereco(o);
   return { id: uid(), street: o.street || "", num: o.num || "s/n", comp: o.comp || "", bairro: o.bairro || "", city: o.city || "", cep: o.cep || "",
     ref: o.ref || "", client: o.client || "", phone: o.phone || "", code: o.code || "", pk: Math.max(1, +o.pk || 1), win: o.win || "", prio: !!o.prio,
-    lat: o.lat ?? null, lng: o.lng ?? null, geo: o.lat != null ? "ok" : "", status: "pending", reason: "", recv: "", note: "", photo: false, doneAt: null, src: o.src || "", ...(o.semTipo ? { semTipo: true } : {}), ...(o.seq ? { seq: String(o.seq) } : {}), ...(o.paradaPlan ? { paradaPlan: String(o.paradaPlan) } : {}) };
+    lat: o.lat ?? null, lng: o.lng ?? null, geo: o.lat != null ? "ok" : "", status: "pending", reason: "", recv: "", note: "", photo: false, doneAt: null, src: o.src || "", ...(o.semTipo ? { semTipo: true } : {}), ...(o.seq ? { seq: String(o.seq) } : {}), ...(o.paradaPlan ? { paradaPlan: String(o.paradaPlan) } : {}), ...(o.imp != null ? { imp: o.imp } : {}) };
 }
 /* rotas secundárias: cada lote adicionado depois ganha uma cor */
 const COR_NOMES = ["", "laranja", "roxa", "azul", "rosa"];
@@ -544,8 +544,14 @@ function encaixaNaRota(x) {
 function addStops(list, { geocode = true } = {}) {
   // até 2 de cada vez (voz, digitado, bipado) é sempre a mesma rota; rota nova só com lote grande depois de começar
   const avulso = list.length < 3;
+  const exemplo = list.length > 0 && list.every(x => x && x.src === "exemplo");
+  const manterOrdem = !avulso && !exemplo; // lista importada de verdade (não o exemplo) mantém a ordem que veio
   const grupo = avulso ? 0 : grupoDoLote();
-  const added = list.map(newStop); added.forEach(x => { x.grupo = grupo; if (avulso && rotaComecou()) x.encaixar = true; }); guardarNaAgenda(added);
+  const added = list.map(newStop);
+  const imp0 = st._impMax || 0;
+  added.forEach((x, i) => { x.grupo = grupo; if (manterOrdem) x.imp = imp0 + i + 1; if (avulso && rotaComecou()) x.encaixar = true; });
+  if (manterOrdem) { st._impMax = imp0 + added.length; if (!rotaComecou() && st.settings.ordemPadrao !== "otimizar") st.ordemPlanilha = true; }
+  guardarNaAgenda(added);
   st.ultimaAdicao = Date.now();
   st.stops.push(...added);
   added.forEach(s => { if (!hasGeo(s) && geocode) queueGeocode(s); else if (s.encaixar) encaixaNaRota(s); });
@@ -756,8 +762,8 @@ function renderNext0() {
     box.innerHTML = `<div class="cta-box ready">
       <button class="xclose" data-act="cancelroute" aria-label="Cancelar rota" title="Cancelar rota">✕</button>
       <div class="ready-line"><span class="ready-tit">${busy ? "Organizando a rota" : "Rota pronta"}</span><span class="ready-num"><b>${p.length}</b> parada${p.length > 1 ? "s" : ""}${km ? ` · ${km1(km)} km` : ""}${busy ? "" : ` · término ~${fim}`}</span></div>
-      <button class="inifim" data-act="inifim"><span>Início: <b>${esc(nomePonto(st.start, "onde você estiver"))}</b></span><span>Fim: <b>${esc(st.end ? nomePonto(st.end) : (st.settings.roundTrip && st.start ? "voltar ao início" : "última entrega"))}</b></span><i>✎</i></button>
-      ${temSequencia(p) ? `<button class="inifim" data-act="ordem"><span>Ordem: <b>${st.ordemPlanilha ? "sequência da planilha" : "otimizada pelo DeliveRota"}</b></span>${st.ordemPlanilha && p.some(x => x.foraSeq) ? `<span><b>${p.filter(x => x.foraSeq).length}</b> fora da sequência</span>` : ""}<i>✎</i></button>` : ""}
+      <button class="setup-row" data-act="inifim"><span class="su-ic">🏁</span><b>Início e fim</b><em>${st.start || st.end || (st.settings.roundTrip && st.start) ? `${esc(nomePonto(st.start, "onde sai"))} → ${esc(st.end ? nomePonto(st.end) : (st.settings.roundTrip && st.start ? "volta ao início" : "última entrega"))}` : "definir saída e destino (casa, galpão)"}</em><i class="su-go">›</i></button>
+      ${temSequencia(p) ? `<button class="setup-row" data-act="ordem"><span class="su-ic">${st.ordemPlanilha ? "🔢" : "⚡"}</span><b>Ordem</b><em>${st.ordemPlanilha ? `da sua lista (Shopee)${p.some(x => x.foraSeq) ? " · " + p.filter(x => x.foraSeq).length + " fora" : ""}` : "otimizada pelo app"}</em><i class="su-go">›</i></button>` : ""}
       <span class="ready-st${busy ? " busy" : ""}">${busy ? `<i class="spin"></i>Achando ${busy} no mapa` : (st.ordemPlanilha && temSequencia(p) ? "✓ Na sequência da planilha" : grupos.length > 1 ? "✓ Tudo junto e otimizado" : "✓ Otimizada na melhor ordem")}</span>
       ${legenda}
       <button class="btn primary cta" data-act="start" ${esperando ? "disabled" : ""}><svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>${esperando ? "COMEÇANDO..." : "COMEÇAR ROTA"}</button>
@@ -798,6 +804,7 @@ function renderNext0() {
     </div>
     ${addrNote(s) ? `<div class="note warnnote">${I.info}<span><b>Você anotou neste endereço:</b> ${esc(addrNote(s))}</span></div>` : ""}
     ${s.ref ? `<div class="note">${I.info}<span><b>Referência:</b> ${esc(s.ref)}</span></div>` : ""}
+    <button class="setup-mini" data-act="inifim"><span>🏁</span>Início e fim: <b>${esc(st.start ? nomePonto(st.start) : "onde você sai")} → ${esc(st.end ? nomePonto(st.end) : (st.settings.roundTrip && st.start ? "volta ao início" : "última entrega"))}</b><i>›</i></button>
     <div class="stack tec">
       <div class="navsw" role="group" aria-label="App de navegação"><span>Navegar</span><button data-navset="app" aria-pressed="${st.settings.nav === "app"}">No app</button><button data-navset="google" aria-pressed="${st.settings.nav === "google"}">Google</button><button data-navset="waze" aria-pressed="${st.settings.nav === "waze"}">Waze</button></div>
       <div class="tiles">
@@ -816,16 +823,23 @@ function rotaComecou() { return !!st.started || st.stops.some(s => s.status !== 
 let autoOptT = null;
 /* ===================== ordem da planilha (Shopee): segue a sequência e encaixa as sem número ===================== */
 const numSeq = s => { const n = parseInt(String(s.seq || s.paradaPlan || "").replace(/\D+/g, ""), 10); return isFinite(n) && n > 0 ? n : null; };
-function temSequencia(list) { const l = list || pending(); return l.length >= 3 && l.filter(x => numSeq(x) != null).length >= l.length * .3; }
+// a lista tem sequência numérica (Shopee) em pelo menos 30% das paradas?
+function temSeqNum(list) { const l = list || pending(); return l.length >= 3 && l.filter(x => numSeq(x) != null).length >= l.length * .3; }
+// a rota veio de uma lista importada (planilha/foto/PDF) e dá para manter a ordem que veio?
+function temLista(list) { const l = list || pending(); return l.length >= 3 && (temSeqNum(l) || l.filter(x => x.imp != null).length >= l.length * .6); }
+function temSequencia(list) { return temLista(list); }
+// chave de ordenação: número da sequência (Shopee) e, sem ele, a ordem em que foi importado
+function ordKey(s) { const n = numSeq(s); if (n != null) return n; return s.imp != null ? 100000 + s.imp : null; }
 function ordemDaPlanilha({ quieto = false } = {}) {
   const done = st.stops.filter(x => x.status !== "pending"), pend = pending();
-  const com = pend.filter(x => numSeq(x) != null).sort((a, b) => numSeq(a) - numSeq(b));
-  const sem = pend.filter(x => numSeq(x) == null);
+  const com = pend.filter(x => ordKey(x) != null).sort((a, b) => ordKey(a) - ordKey(b));
+  const sem = pend.filter(x => ordKey(x) == null);
   const ordem = com.slice(); const d = (a, b) => (a && b && hasGeo(a) && hasGeo(b)) ? hav(a, b) : 0;
+  const temNum = temSeqNum(pend);
   com.forEach(x => { x.foraSeq = false; });
   const semGeo = [];
   sem.forEach(x => {
-    x.foraSeq = true;
+    x.foraSeq = temNum;
     if (!hasGeo(x)) { semGeo.push(x); return; }
     let melhor = ordem.length, custo = Infinity;
     for (let i = 0; i <= ordem.length; i++) {
@@ -837,14 +851,14 @@ function ordemDaPlanilha({ quieto = false } = {}) {
   });
   pend.forEach(x => { if (!rotaComecou()) x.grupo = 0; });
   st.stops = done.concat(ordem, semGeo); st.ordemPlanilha = true; st.otimizada = true; markStart(); save(); renderAll(true);
-  if (!quieto) toast(`Rota na ordem da planilha${sem.length ? ` · ${sem.length} fora da sequência, encaixada${sem.length > 1 ? "s" : ""} no caminho` : ""}`, 3500);
+  if (!quieto) toast(`Rota na ordem da sua lista${sem.length ? ` · ${sem.length} fora da ordem, encaixada${sem.length > 1 ? "s" : ""} no caminho` : ""}`, 3500);
 }
 function ordemSheet(depois) {
-  const p = pending(), sem = p.filter(x => numSeq(x) == null).length;
-  sheet(`<h3>Como você quer a ordem da rota?</h3><p class="sub">Sua lista já vem com a sequência da transportadora (Shopee, Mercado Livre...).${sem ? ` <b>${sem}</b> parada${sem > 1 ? "s vêm" : " vem"} sem número.` : ""}</p>
+  const p = pending(), num = temSeqNum(p), sem = num ? p.filter(x => numSeq(x) == null).length : 0;
+  sheet(`<h3>Ordem da rota</h3><p class="sub">${num ? "Sua lista veio com a sequência da transportadora (Shopee, Mercado Livre...)." : "Dá para manter a ordem que você montou ou deixar o app otimizar."}${sem ? ` <b>${sem}</b> parada${sem > 1 ? "s vêm" : " vem"} sem número; o app encaixa no melhor ponto do caminho.` : ""}</p>
     <div class="navpick">
-      <button data-ord="planilha" aria-pressed="${!!st.ordemPlanilha}"><span style="font-size:22px">🔢</span><span><b>Seguir a sequência da planilha</b><em>Mantém a ordem da Shopee e encaixa as sem número no melhor ponto do caminho, marcadas como "fora da sequência"</em></span></button>
-      <button data-ord="otimizar" aria-pressed="${!st.ordemPlanilha}"><span style="font-size:22px">⚡</span><span><b>DeliveRota otimiza tudo</b><em>Monta a melhor ordem do zero para rodar menos</em></span></button>
+      <button data-ord="planilha" aria-pressed="${!!st.ordemPlanilha}"><span style="font-size:22px">${num ? "🔢" : "📋"}</span><span><b>Manter a ordem da minha lista${num ? " (Shopee)" : ""}</b><em>${num ? "Segue a sequência da transportadora" : "Mantém a ordem em que os endereços entraram"}${sem ? ", encaixando as sem número no caminho" : ""}</em></span></button>
+      <button data-ord="otimizar" aria-pressed="${!st.ordemPlanilha}"><span style="font-size:22px">⚡</span><span><b>DeliveRota otimiza tudo</b><em>Monta a melhor ordem do zero para você rodar menos</em></span></button>
     </div>`, bg => {
     bg.querySelectorAll("[data-ord]").forEach(b => b.addEventListener("click", () => {
       closeSheet(); st.settings.ordemPadrao = b.dataset.ord;
@@ -973,7 +987,8 @@ function go(name) {
 let toastT;
 function toast(m, ms = 2800) { const t = $("#toast"); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, ms); }
 function sheet(html, onOpen) {
-  $("#sheetHost").innerHTML = `<div class="sheet-bg" id="sbg"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
+  const temX = /data-close|class="xclose"/.test(html);
+  $("#sheetHost").innerHTML = `<div class="sheet-bg" id="sbg"><div class="sheet" role="dialog" aria-modal="true">${temX ? "" : `<button class="sheet-x" data-close aria-label="Fechar">✕</button>`}${html}</div></div>`;
   $("#sbg").addEventListener("click", e => { if (e.target.id === "sbg" || e.target.closest("[data-close]")) closeSheet(); });
   if (onOpen) onOpen($("#sbg"));
 }
@@ -1219,7 +1234,7 @@ function confirmImport({ fica = false } = {}) {
   if (!list.length) { toast("Marque pelo menos um endereço"); return false; }
   const exist = new Set(st.stops.map(s => (s.street + "|" + s.num + "|" + s.comp).toLowerCase()));
   const fresh = list.filter(a => !exist.has((a.street + "|" + a.num + "|" + a.comp).toLowerCase()));
-  if (temSequencia(fresh) && !rotaComecou()) st.ordemPlanilha = st.settings.ordemPadrao !== "otimizar"; // segue a sequência da Shopee; dá para trocar no cartão da rota
+  if (temLista(fresh) && !rotaComecou()) st.ordemPlanilha = st.settings.ordemPadrao !== "otimizar"; // por padrão mantém a ordem da lista (Shopee); dá para trocar no cartão da rota
   addStops(fresh);
   $("#importBox").innerHTML = ""; importList = []; ["#docStatus", "#ocrStatus"].forEach(q => { const x = $(q); if (x) x.hidden = true; }); renderAddBar();
   if (fica) {
@@ -1987,7 +2002,7 @@ function menuRotas() {
   sheet(`<h3>Rotas</h3>${st.rotaNome ? `<p class="sub">Rota atual: <b>${esc(st.rotaNome)}</b>${st.rotaData ? " · " + brOf(st.rotaData) : ""}</p>` : ""}
     <div class="menu-list">
       <button data-m="criar"><span>🗓</span><b>Criar rota</b><em>Com nome e data: hoje, amanhã ou outro dia</em></button>
-      <button data-m="ordem"${temSequencia() ? "" : " disabled"}><span>🔢</span><b>Ordem da planilha (Shopee)</b><em>${st.ordemPlanilha ? "Ligada: seguindo a sequência da transportadora" : "Seguir a sequência que vem na planilha"}</em></button>
+      <button data-m="ordem"${temLista() ? "" : " disabled"}><span>🔢</span><b>Ordem da rota</b><em>${st.ordemPlanilha ? "Mantendo a ordem da sua lista (Shopee)" : "Otimizada pelo DeliveRota · toque para manter a ordem da lista"}</em></button>
       <button data-m="inifim"><span>🏠</span><b>Início e fim da rota</b><em>De onde sai e onde termina (ex.: voltar para casa)</em></button>
       <button data-m="salvas"><span>📂</span><b>Rotas salvas</b><em>${pl ? pl + " rota" + (pl > 1 ? "s" : "") + " para os próximos dias" : "Nenhuma ainda"}</em></button>
       <button data-m="anteriores"><span>↺</span><b>Reutilizar paradas anteriores</b><em>Endereços que você já entregou</em></button>
@@ -3329,5 +3344,5 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
 })();
 
 // para testes automáticos
-window.DeliveRota = { ordemDaPlanilha, ordemSheet, temSequencia, optimize, verMapaSheet, textoVer, handleOcr, map: () => map, previsao, inicioFimSheet, fimPt, comecarRota, trocarAlvoNav, empacotar, desempacotar, receberRotaDoLink, adicionarRapido, lerNotinha, gastoSheet, periodData, acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
+window.DeliveRota = { addStops, showImport, menuRotas, ordemDaPlanilha, ordemSheet, temSequencia, optimize, verMapaSheet, textoVer, handleOcr, map: () => map, previsao, inicioFimSheet, fimPt, comecarRota, trocarAlvoNav, empacotar, desempacotar, receberRotaDoLink, adicionarRapido, lerNotinha, gastoSheet, periodData, acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
 })();
