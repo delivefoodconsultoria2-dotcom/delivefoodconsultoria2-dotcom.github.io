@@ -33,4 +33,4 @@ window.DELIVEROTA_API = "";
 
 /* Chave do Google Maps (mapa do Google por baixo do layout do DeliveRota).
    Vazio = usa o mapa gratuito (OpenStreetMap). Cole a chave entre as aspas. */
-window.DELIVEROTA_GMAPS_KEY = "";
+window.DELIVEROTA_GMAPS_KEY = "AIzaSyDni5N-8MTMEybJg4PsMeaZqzd6K5N7xdY";
