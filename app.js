@@ -48,7 +48,7 @@ async function dbDel(store, key) { try { const d = await idb(); await new Promis
 const DEFAULTS = {
   gastos: [], agenda: [], planejadas: [], rotaNome: "", rotaData: "",
   stops: [], start: null, history: [], filter: "all",
-  settings: { city: "Belo Horizonte - MG", rate: 3.5, vehicle: "moto", stopMin: 3, nav: "google", roundTrip: false, theme: "system",
+  settings: { city: "Belo Horizonte - MG", rate: 3.5, vehicle: "moto", stopMin: 1, nav: "google", roundTrip: false, theme: "system",
     speak: true, kml: 0, fuelPrice: 6.19, autoRep: "none", repWa: "", repMail: "", msg: "Olá {nome}! Sou o entregador do seu pedido e chego em cerca de {min} minutos." }
 };
 let st = JSON.parse(JSON.stringify(DEFAULTS));
@@ -133,10 +133,12 @@ function ordenar(geo, anchor, d) {
 }
 const dReta = (a, b) => (a && b) ? hav(a, b) : 0;
 function optimize(opts = {}) {
+  if (!opts.auto) st.ordemPlanilha = false;
   const done = st.stops.filter(s => s.status !== "pending");
   const pend = pending();
   const geo = pend.filter(hasGeo), noGeo = pend.filter(s => !hasGeo(s));
   if (geo.length < 2) { toast(noGeo.length ? "Algumas paradas ainda estão sem localização" : "Adicione pelo menos 2 paradas"); return; }
+  if (!rotaComecou()) pend.forEach(x => { x.grupo = 0; }); // antes de começar, junta tudo na rota principal
   const before = routeKm(geo, lastPoint());
   const anchor = lastPoint() || geo[0];
   const out = ordenar(geo, anchor, dReta);
@@ -285,7 +287,7 @@ async function runGeo() {
     await Promise.all(lista.filter(s => s.cep && (!s.street || !(s.city || st.settings.city))).map(async s => { const v = await viaCep(s.cep); if (v) { s.street = s.street || v.logradouro; s.bairro = s.bairro || v.bairro; s.city = s.city || `${v.localidade} - ${v.uf}`; } }));
     // endereços iguais: busca uma vez só
     const grupos = new Map(); lista.forEach(s => { const k = geoKey(s); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(s); });
-    const aplica = (grupo, g) => { grupo.forEach(s => { if (g) { s.lat = g.lat; s.lng = g.lng; s.geo = "ok"; nomeOficial(s, g.p); } }); if (g) guardarNaAgenda(grupo); };
+    const aplica = (grupo, g) => { grupo.forEach(s => { if (g) { s.lat = g.lat; s.lng = g.lng; s.geo = "ok"; nomeOficial(s, g.p); if (s.encaixar) encaixaNaRota(s); } }); if (g) guardarNaAgenda(grupo); };
     const faltam = [];
     // 1) memória do aparelho
     for (const [k, grupo] of grupos) { const c = await dbGet("kv", k); if (c) aplica(grupo, c); else faltam.push([k, grupo]); }
@@ -484,7 +486,7 @@ function newStop(o) {
   o = limparEndereco(o);
   return { id: uid(), street: o.street || "", num: o.num || "s/n", comp: o.comp || "", bairro: o.bairro || "", city: o.city || "", cep: o.cep || "",
     ref: o.ref || "", client: o.client || "", phone: o.phone || "", code: o.code || "", pk: Math.max(1, +o.pk || 1), win: o.win || "", prio: !!o.prio,
-    lat: o.lat ?? null, lng: o.lng ?? null, geo: o.lat != null ? "ok" : "", status: "pending", reason: "", recv: "", note: "", photo: false, doneAt: null, src: o.src || "", ...(o.semTipo ? { semTipo: true } : {}) };
+    lat: o.lat ?? null, lng: o.lng ?? null, geo: o.lat != null ? "ok" : "", status: "pending", reason: "", recv: "", note: "", photo: false, doneAt: null, src: o.src || "", ...(o.semTipo ? { semTipo: true } : {}), ...(o.seq ? { seq: String(o.seq) } : {}), ...(o.paradaPlan ? { paradaPlan: String(o.paradaPlan) } : {}) };
 }
 /* rotas secundárias: cada lote adicionado depois ganha uma cor */
 const COR_NOMES = ["", "laranja", "roxa", "azul", "rosa"];
@@ -493,18 +495,32 @@ const gCls = s => gNum(s) ? " g" + gNum(s) : "";
 const gTag = s => gNum(s) ? `<span class="fact gtag g${gNum(s)}">Rota ${s.grupo + 1}</span>` : "";
 function grupoDoLote() {
   const pend = st.stops.filter(x => x.status === "pending");
-  if (!st.stops.length) return 0;
+  if (!st.stops.length || !rotaComecou()) return 0; // antes de começar, tudo é a rota principal
   const agora = Date.now(), ult = st.ultimaAdicao || 0;
   const atual = Math.max(0, ...st.stops.map(x => x.grupo || 0));
   if (agora - ult < 60000) return atual; // mesmo lote (ex.: bipando um pacote atrás do outro)
   return pend.length || st.stops.length ? atual + 1 : 0;
 }
+/* parada avulsa (voz, digitada) com a rota já rodando: entra na MESMA rota, no melhor ponto do caminho */
+function encaixaNaRota(x) {
+  delete x.encaixar; if (!hasGeo(x) || x.status !== "pending") return;
+  const outras = pending().filter(y => y !== x); const i0 = st.stops.indexOf(x); if (i0 >= 0) st.stops.splice(i0, 1);
+  let melhor = null, custo = Infinity;
+  for (let i = 1; i <= outras.length; i++) { // nunca antes da parada atual (a primeira pendente)
+    const a = outras[i - 1], b = outras[i]; if (!hasGeo(a)) continue;
+    const c = hav(a, x) + (b && hasGeo(b) ? hav(x, b) - hav(a, b) : 0);
+    if (c < custo) { custo = c; melhor = b || null; }
+  }
+  if (melhor) st.stops.splice(st.stops.indexOf(melhor), 0, x); else st.stops.push(x);
+}
 function addStops(list, { geocode = true } = {}) {
-  const grupo = grupoDoLote();
-  const added = list.map(newStop); added.forEach(x => x.grupo = grupo); guardarNaAgenda(added);
+  // até 2 de cada vez (voz, digitado, bipado) é sempre a mesma rota; rota nova só com lote grande depois de começar
+  const avulso = list.length < 3;
+  const grupo = avulso ? 0 : grupoDoLote();
+  const added = list.map(newStop); added.forEach(x => { x.grupo = grupo; if (avulso && rotaComecou()) x.encaixar = true; }); guardarNaAgenda(added);
   st.ultimaAdicao = Date.now();
   st.stops.push(...added);
-  added.forEach(s => { if (!hasGeo(s) && geocode) queueGeocode(s); });
+  added.forEach(s => { if (!hasGeo(s) && geocode) queueGeocode(s); else if (s.encaixar) encaixaNaRota(s); });
   if (added.length) st.otimizada = false;
   save(); renderAll(true); autoOtimizar();
   return added;
@@ -556,12 +572,40 @@ function initMap() {
 }
 function setPinMode(m) { pinMode = m; $("#pinBtn").setAttribute("aria-pressed", m === "new"); if (map) map.getContainer().style.cursor = m ? "crosshair" : ""; if (m) { if (m !== "new") toast("Toque no mapa no local certo"); else toast("Toque no mapa onde fica a entrega"); } }
 function icon(cls, txt) { return L.divIcon({ className: "", html: `<div class="pin ${cls}">${txt}</div>`, iconSize: [38, 38], iconAnchor: [19, 19] }); }
+/* navegando: nada de nome em cima de nome — mostra primeiro a parada atual e as próximas da rota,
+   e esconde o rótulo que bateria em outro já mostrado; longe (zoom baixo) só a parada atual */
+function limpaRotulos() {
+  if (!map) return;
+  const z = map.getZoom(), tts = [];
+  layer.eachLayer(l => { if (l.__ordem != null && l.getTooltip && l.getTooltip()) tts.push(l); });
+  tts.sort((a, b) => a.__ordem - b.__ordem);
+  const ocup = [];
+  layer.eachLayer(l => { if (l._icon && l.__bairro == null && l.getLatLng) { const r = l._icon.getBoundingClientRect(); if (r.width) ocup.push({ left: r.left + 4, right: r.right - 4, top: r.top + 4, bottom: r.bottom - 4 }); } }); // os números ficam sempre à vista
+  // nomes dos bairros: os com mais paradas primeiro; some o que bateria em outro
+  const bs = []; layer.eachLayer(l => { if (l.__bairro != null && l._icon) bs.push(l); }); bs.sort((a, b) => b.__bairro - a.__bairro);
+  const alvoT = tts.filter(l => l.__ordem === -1);
+  alvoT.forEach(l => { const el = l.getTooltip().getElement(); if (el) { el.style.visibility = "visible"; const r = el.getBoundingClientRect(); if (r.width) ocup.push(r); } });
+  const ocupB = alvoT.map(l => { const el = l.getTooltip().getElement(); return el ? el.getBoundingClientRect() : null; }).filter(Boolean);
+  bs.forEach(l => { const el = l._icon.firstElementChild || l._icon; el.style.visibility = "visible"; const r = el.getBoundingClientRect(); if (!r.width) return;
+    if (ocupB.some(o => !(r.right < o.left || r.left > o.right || r.bottom < o.top || r.top > o.bottom))) { el.style.visibility = "hidden"; return; }
+    ocupB.push(r); });
+  tts.forEach(l => {
+    if (l.__ordem === -1) return;
+    const el = l.getTooltip().getElement(); if (!el) return;
+    el.style.visibility = "visible";
+    if (z < 15 && l.__ordem !== -1) { el.style.visibility = "hidden"; return; }
+    const r = el.getBoundingClientRect(); if (!r.width) return;
+    const m = 3, bate = ocup.some(o => !(r.right + m < o.left || r.left - m > o.right || r.bottom + m < o.top || r.top - m > o.bottom));
+    if (bate && l.__ordem !== -1) el.style.visibility = "hidden"; else ocup.push(r);
+  });
+}
+let limpaT = null; function limpaDepois() { clearTimeout(limpaT); limpaT = setTimeout(limpaRotulos, 60); }
 function drawMap(fit) {
   if (!map) return;
   layer.clearLayers();
   const pts = [];
   if (st.start) { L.marker([st.start.lat, st.start.lng], { icon: icon("base", "P"), title: "Partida" }).addTo(layer); pts.push([st.start.lat, st.start.lng]); }
-  const pend = pending();
+  const pend = pending(); let pvMapa = null;
   if (st.end && st.end.lat != null) { L.marker([st.end.lat, st.end.lng], { icon: icon("base", "F"), title: "Fim da rota" }).addTo(layer); pts.push([st.end.lat, st.end.lng]); }
   st.stops.forEach(s => {
     if (!hasGeo(s)) return;
@@ -570,7 +614,7 @@ function drawMap(fit) {
     const ehAlvo = NV.on && NV.alvo === s;
     const mk = L.marker([s.lat, s.lng], { icon: icon((ehAlvo ? "next" : (NV.on && cls === "next" ? "" : cls)) + gCls(s), s.status === "delivered" ? "✓" : n), zIndexOffset: ehAlvo ? 1500 : (cls === "next" ? 1000 : 0) })
       .on("click", () => NV.on ? navParadaSheet(s) : stopSheet(s)).addTo(layer);
-    if (NV.on && s.status === "pending") mk.bindTooltip(`${esc(s.street || "")}${s.num ? ", " + esc(s.num) : ""}`, { permanent: true, direction: "right", offset: [16, 0], className: "navlbl" + (ehAlvo ? " alvo" : "") });
+    if (NV.on && s.status === "pending") { const vs = textoVer(s, pvMapa || (pvMapa = previsao()), 4, !ehAlvo); mk.__ordem = ehAlvo ? -1 : pend.indexOf(s); if (vs.length) mk.bindTooltip(`<b>${esc(vs[0])}</b>${vs.length > 1 ? `<em>${vs.slice(1).map(esc).join(" · ")}</em>` : ""}`, { permanent: true, direction: "right", offset: [16, 0], className: "navlbl" + (ehAlvo ? " alvo" : "") }); }
     pts.push([s.lat, s.lng]);
   });
   const path = [lastPoint(), ...pend, pend.length ? fimPt() : null].filter(p => p && p.lat != null).map(p => [p.lat, p.lng]);
@@ -579,6 +623,13 @@ function drawMap(fit) {
   else if (osrmLine && key === osrmKey) L.polyline(osrmLine, { color: "#18A957", weight: 5, opacity: .85 }).addTo(layer);
   else { if (path.length > 1) L.polyline(path, { color: "#18A957", weight: 4, opacity: .7, dashArray: "6 8" }).addTo(layer); fetchRoad(path, key); }
   if (fit && pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 16 });
+  // nome de cada bairro da rota escrito no mapa (uma vez, no meio das paradas daquele bairro)
+  if (verEscolhidos().includes("bairro")) {
+    const bairros = new Map();
+    pend.filter(x => hasGeo(x) && x.bairro).forEach(x => { const k = norm(x.bairro); if (!bairros.has(k)) bairros.set(k, { nome: x.bairro, la: 0, lo: 0, n: 0 }); const b = bairros.get(k); b.la += x.lat; b.lo += x.lng; b.n++; });
+    bairros.forEach(b => { const m2 = L.marker([b.la / b.n, b.lo / b.n], { icon: L.divIcon({ className: "", html: `<div class="bairrolbl">${esc(b.nome)}<small>${b.n} parada${b.n > 1 ? "s" : ""}</small></div>`, iconSize: [0, 0] }), interactive: false, zIndexOffset: -500, keyboard: false }); m2.__bairro = b.n; m2.addTo(layer); });
+  }
+  if (!map.__limpa) { map.__limpa = 1; map.on("zoomend moveend", limpaDepois); } limpaDepois();
 }
 let roadT;
 function fetchRoad(path, key) {
@@ -671,7 +722,8 @@ function renderNext0() {
       <button class="xclose" data-act="cancelroute" aria-label="Cancelar rota" title="Cancelar rota">✕</button>
       <div class="ready-line"><span class="ready-tit">${busy ? "Organizando a rota" : "Rota pronta"}</span><span class="ready-num"><b>${p.length}</b> parada${p.length > 1 ? "s" : ""}${km ? ` · ${km1(km)} km` : ""}${busy ? "" : ` · término ~${fim}`}</span></div>
       <button class="inifim" data-act="inifim"><span>Início: <b>${esc(nomePonto(st.start, "onde você estiver"))}</b></span><span>Fim: <b>${esc(st.end ? nomePonto(st.end) : (st.settings.roundTrip && st.start ? "voltar ao início" : "última entrega"))}</b></span><i>✎</i></button>
-      <span class="ready-st${busy ? " busy" : ""}">${busy ? `<i class="spin"></i>Achando ${busy} no mapa` : (grupos.length > 1 ? "✓ Tudo junto e otimizado" : "✓ Otimizada na melhor ordem")}</span>
+      ${temSequencia(p) ? `<button class="inifim" data-act="ordem"><span>Ordem: <b>${st.ordemPlanilha ? "sequência da planilha" : "otimizada pelo DeliveRota"}</b></span>${st.ordemPlanilha && p.some(x => x.foraSeq) ? `<span><b>${p.filter(x => x.foraSeq).length}</b> fora da sequência</span>` : ""}<i>✎</i></button>` : ""}
+      <span class="ready-st${busy ? " busy" : ""}">${busy ? `<i class="spin"></i>Achando ${busy} no mapa` : (st.ordemPlanilha && temSequencia(p) ? "✓ Na sequência da planilha" : grupos.length > 1 ? "✓ Tudo junto e otimizado" : "✓ Otimizada na melhor ordem")}</span>
       ${legenda}
       <button class="btn primary cta" data-act="start" ${esperando ? "disabled" : ""}><svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>${esperando ? "COMEÇANDO..." : "COMEÇAR ROTA"}</button>
       ${esperando ? `<p class="ok-txt">Começa sozinho assim que achar os ${busy} endereço(s) que faltam.</p>` : semMapa ? `<p class="ok-txt">${semMapa} endereço(s) sem local no mapa ficam no fim.</p>` : ""}
@@ -704,6 +756,7 @@ function renderNext0() {
       ${gTag(s)}<span class="fact">${s.pk} ${s.pk > 1 ? "pacotes" : "pacote"}</span>
       ${s.code ? `<span class="fact mono">${esc(s.code)}</span>` : ""}
       ${s.prio ? `<span class="fact prio">Prioridade</span>` : ""}
+      ${st.ordemPlanilha && s.foraSeq ? `<span class="fact prio">Fora da sequência</span>` : ""}
       ${s.win ? `<span class="fact pos">${esc(s.win)}</span>` : ""}
       ${grp > 1 ? `<span class="fact grp">Mesmo prédio: ${grp} entregas</span>` : ""}
       ${!hasGeo(s) ? `<span class="fact prio">${s.geo === "busy" ? "Localizando no mapa..." : "Sem local no mapa"}</span>` : ""}
@@ -725,13 +778,53 @@ function renderNext0() {
 /* ---------- fluxo simples: carregar → otimizar sozinho → começar → cancelar ---------- */
 function rotaComecou() { return !!st.started || st.stops.some(s => s.status !== "pending"); }
 let autoOptT = null;
+/* ===================== ordem da planilha (Shopee): segue a sequência e encaixa as sem número ===================== */
+const numSeq = s => { const n = parseInt(String(s.seq || s.paradaPlan || "").replace(/\D+/g, ""), 10); return isFinite(n) && n > 0 ? n : null; };
+function temSequencia(list) { const l = list || pending(); return l.length >= 3 && l.filter(x => numSeq(x) != null).length >= l.length * .3; }
+function ordemDaPlanilha({ quieto = false } = {}) {
+  const done = st.stops.filter(x => x.status !== "pending"), pend = pending();
+  const com = pend.filter(x => numSeq(x) != null).sort((a, b) => numSeq(a) - numSeq(b));
+  const sem = pend.filter(x => numSeq(x) == null);
+  const ordem = com.slice(); const d = (a, b) => (a && b && hasGeo(a) && hasGeo(b)) ? hav(a, b) : 0;
+  com.forEach(x => { x.foraSeq = false; });
+  const semGeo = [];
+  sem.forEach(x => {
+    x.foraSeq = true;
+    if (!hasGeo(x)) { semGeo.push(x); return; }
+    let melhor = ordem.length, custo = Infinity;
+    for (let i = 0; i <= ordem.length; i++) {
+      const a = i ? ordem[i - 1] : lastPoint(), b = ordem[i];
+      const c = d(a, x) + (b ? d(x, b) - d(a, b) : 0);
+      if (c < custo) { custo = c; melhor = i; }
+    }
+    ordem.splice(melhor, 0, x);
+  });
+  pend.forEach(x => { if (!rotaComecou()) x.grupo = 0; });
+  st.stops = done.concat(ordem, semGeo); st.ordemPlanilha = true; st.otimizada = true; markStart(); save(); renderAll(true);
+  if (!quieto) toast(`Rota na ordem da planilha${sem.length ? ` · ${sem.length} fora da sequência, encaixada${sem.length > 1 ? "s" : ""} no caminho` : ""}`, 3500);
+}
+function ordemSheet(depois) {
+  const p = pending(), sem = p.filter(x => numSeq(x) == null).length;
+  sheet(`<h3>Como você quer a ordem da rota?</h3><p class="sub">Sua lista já vem com a sequência da transportadora (Shopee, Mercado Livre...).${sem ? ` <b>${sem}</b> parada${sem > 1 ? "s vêm" : " vem"} sem número.` : ""}</p>
+    <div class="navpick">
+      <button data-ord="planilha" aria-pressed="${!!st.ordemPlanilha}"><span style="font-size:22px">🔢</span><span><b>Seguir a sequência da planilha</b><em>Mantém a ordem da Shopee e encaixa as sem número no melhor ponto do caminho, marcadas como "fora da sequência"</em></span></button>
+      <button data-ord="otimizar" aria-pressed="${!st.ordemPlanilha}"><span style="font-size:22px">⚡</span><span><b>DeliveRota otimiza tudo</b><em>Monta a melhor ordem do zero para rodar menos</em></span></button>
+    </div>`, bg => {
+    bg.querySelectorAll("[data-ord]").forEach(b => b.addEventListener("click", () => {
+      closeSheet(); st.settings.ordemPadrao = b.dataset.ord;
+      if (b.dataset.ord === "planilha") ordemDaPlanilha(); else { st.ordemPlanilha = false; optimize(); }
+      if (depois) depois();
+    }));
+  });
+}
 function autoOtimizar() {
   if (rotaComecou()) return;
   clearTimeout(autoOptT);
   autoOptT = setTimeout(() => {
     const p = pending();
     if (rotaComecou() || p.some(x => x.geo === "busy")) { if (p.length) renderAll(false); return; }
-    if (p.filter(hasGeo).length >= 2) optimize();
+    if (st.ordemPlanilha && temSequencia(p)) ordemDaPlanilha({ quieto: true });
+    else if (p.filter(hasGeo).length >= 2) optimize({ auto: true });
     st.otimizada = true; save();
     if (st.queroComecar) { comecarRota({ abrirNav: false }); return; }
     renderNext();
@@ -1088,6 +1181,7 @@ function confirmImport({ fica = false } = {}) {
   if (!list.length) { toast("Marque pelo menos um endereço"); return false; }
   const exist = new Set(st.stops.map(s => (s.street + "|" + s.num + "|" + s.comp).toLowerCase()));
   const fresh = list.filter(a => !exist.has((a.street + "|" + a.num + "|" + a.comp).toLowerCase()));
+  if (temSequencia(fresh) && !rotaComecou()) st.ordemPlanilha = st.settings.ordemPadrao !== "otimizar"; // segue a sequência da Shopee; dá para trocar no cartão da rota
   addStops(fresh);
   $("#importBox").innerHTML = ""; importList = []; ["#docStatus", "#ocrStatus"].forEach(q => { const x = $(q); if (x) x.hidden = true; }); renderAddBar();
   if (fica) {
@@ -1166,12 +1260,13 @@ async function handleOcr(files) {
 
 /* ===================== entrada: planilha / PDF / TXT ===================== */
 const COLS = {
+  seq: /^(sequence|sequ[eê]ncia|seq\.?|ordem)$/i, paradaPlan: /^(stop|stop number|parada|n[º°]? ?parada)$/i,
   street: /endere[cç]o|logradouro|address|^rua\b|^destino|^local de entrega/i, num: /^(n[uú]mero|n[º°o]?\.?$|num\b|n[º°]\s)/i, comp: /^(complemento|compl)/i,
   bairro: /^(bairro|distrito|neighbo|district)/i, city: /^(cidade|munic[ií]pio|city)/i, uf: /^(uf|estado|state)$/i, cep: /^(cep|zip|postal|c[oó]digo postal)/i, client: /^(cliente|nome|destinat[aá]rio|recebedor|recipient|customer)/i,
   phone: /^(telefone|fone|celular|whats|contato|tel|phone)/i, code: /^(c[oó]digo|pedido|rastreio|rastreamento|id\b|tracking|nf|nota|spx|tn\b|awb|at id|shipment|package)/i, pk: /^(qtd|quantidade|volumes|pacotes|packages)/i, ref: /^(refer[eê]ncia|obs|observa|notes?)/i,
   lat: /^(lat|latitude)\b/i, lng: /^(lng|lon|long|longitude)\b/i
 };
-const COL_ORDEM = ["lat", "lng", "cep", "num", "comp", "bairro", "city", "uf", "client", "phone", "code", "pk", "ref", "street"]; // rua por último: "Complemento do endereço" é complemento
+const COL_ORDEM = ["seq", "paradaPlan", "lat", "lng", "cep", "num", "comp", "bairro", "city", "uf", "client", "phone", "code", "pk", "ref", "street"]; // rua por último: "Complemento do endereço" é complemento
 const coord = (v, max) => { const n = parseFloat(String(v ?? "").replace(",", ".")); return isFinite(n) && n !== 0 && Math.abs(n) <= max ? n : null; };
 function rowsToAddresses(rows) {
   rows = rows.filter(r => r && r.some(c => String(c ?? "").trim()));
@@ -1194,7 +1289,7 @@ function rowsToAddresses(rows) {
     if (a.street && (!a.num || /,/.test(a.street))) { const p = parseAddressLine(a.street); a = { ...a, street: p.street, num: a.num || p.num || "s/n", comp: a.comp || p.comp, bairro: a.bairro || p.bairro, city: a.city || p.city, cep: a.cep || p.cep }; }
     if (a.cep && digits(a.cep).length <= 8) a.cep = digits(a.cep).padStart(8, "0").replace(/(\d{5})(\d{3})/, "$1-$2");
     const lat = coord(g("lat"), 90), lng = coord(g("lng"), 180);
-    const o = { ...a, street: titulo(a.street), bairro: titulo(a.bairro), comp: titulo(a.comp), client: titulo(g("client")), phone: g("phone"), code: g("code"), pk: +g("pk") || 1, ref: g("ref") };
+    const o = { ...a, seq: g("seq"), paradaPlan: g("paradaPlan"), street: titulo(a.street), bairro: titulo(a.bairro), comp: titulo(a.comp), client: titulo(g("client")), phone: g("phone"), code: g("code"), pk: +g("pk") || 1, ref: g("ref") };
     if (lat != null && lng != null && lat < 6 && lat > -34 && lng < -28 && lng > -74) { o.lat = lat; o.lng = lng; } // ponto já vem na planilha: nem precisa procurar no mapa
     return o;
   }).filter(a => a.street || a.cep || a.lat != null);
@@ -1355,6 +1450,52 @@ function onboardSheet() {
 /* ===================== app de navegação: Google Maps (padrão) ou Waze ===================== */
 const NAV_ICON = { app: '<svg width="26" height="26" viewBox="0 0 24 24"><rect width="24" height="24" rx="6" fill="#18A957"/><path d="M12 5 18 18 12 15 6 18z" fill="#fff"/></svg>', google: '<svg width="26" height="26" viewBox="0 0 24 24"><path fill="#34A853" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg>',
   waze: '<svg width="26" height="26" viewBox="0 0 24 24"><circle cx="12" cy="11" r="8.5" fill="#33CCFF"/><circle cx="9.3" cy="10" r="1.2" fill="#0B1A2A"/><circle cx="14.7" cy="10" r="1.2" fill="#0B1A2A"/><path d="M8.8 13.3c1.8 1.6 4.6 1.6 6.4 0" stroke="#0B1A2A" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>' };
+/* ===================== o que aparece no mapa durante a rota (o entregador escolhe) ===================== */
+const VER_CAMPOS = [
+  { k: "seq", t: "Sequência", d: "A sequência que vem na planilha da transportadora (Shopee, Mercado Livre...).", v: s => numSeq(s) != null ? "Seq. " + numSeq(s) : (st.ordemPlanilha && s.foraSeq ? "Fora da sequência" : "") },
+  { k: "parada", t: "Número da parada", d: "A ordem da parada na sua rota otimizada.", v: s => s.status === "pending" || s.id ? "Parada " + stopNumber(s) : "" },
+  { k: "rua", t: "Endereço completo", d: "Rua, número e complemento (apto, loja, bloco).", v: s => addrLine(s) + (s.comp ? ", " + s.comp : "") },
+  { k: "cliente", t: "Nome do cliente ou do local", d: "Quem recebe ou o nome da loja / ponto de retirada.", v: s => s.client },
+  { k: "bairro", t: "Bairro", d: "Ajuda a se localizar na região.", v: s => s.bairro },
+  { k: "pacotes", t: "Quantidade de pacotes", d: "Quantos volumes descem nessa parada.", v: s => s.pk > 1 ? s.pk + " pacotes" : "1 pacote" },
+  { k: "codigo", t: "Código do pacote", d: "O código de rastreio (AT ID, SPX, BR…, Correios) para achar o pacote no carro.", v: s => s.code },
+  { k: "cidade", t: "Cidade", d: "A cidade da entrega.", v: s => (s.city || "").split(" - ")[0] },
+  { k: "horario", t: "Horário previsto", d: "A hora que o app calcula que você chega nessa parada.", v: (s, pv) => { const o = pv && pv.itens.find(x => x.s === s); return o ? "chega " + hhmm(o.t) : ""; } },
+  { k: "telefone", t: "Telefone do cliente", d: "Para ligar ou chamar no WhatsApp ao chegar.", v: s => s.phone },
+  { k: "ref", t: "Referência / observação", d: "Ponto de referência ou recado da entrega.", v: s => s.ref },
+  { k: "cep", t: "CEP", d: "O CEP do endereço.", v: s => s.cep }
+];
+const VER_PADRAO = ["seq", "parada", "rua", "bairro"];
+const verEscolhidos = () => Array.isArray(st.settings.verMapa) ? st.settings.verMapa : VER_PADRAO;
+function textoVer(s, pv, max, compacto) {
+  // no mapa, as outras paradas ficam enxutas: o número já está no pino e o endereço inteiro só na parada atual
+  const ks = compacto ? verEscolhidos().filter(k => k !== "rua" && k !== "parada" && k !== "bairro") : verEscolhidos();
+  const vals = ks.map(k => { const c = VER_CAMPOS.find(x => x.k === k); return c ? c.v(s, pv) : ""; }).filter(Boolean).map(String);
+  return max ? vals.slice(0, max) : vals;
+}
+function verMapaSheet(depois) {
+  const exemplo = pending().filter(hasGeo)[0] || pending()[0] || { street: "Rua Orquídea", num: "261", comp: "Loja 2", bairro: "Marajó", client: "Padaria Pitchula", pk: 2, code: "BR262196888126V", phone: "(31) 99999-0000", ref: "Portão verde", cep: "30570-480" };
+  const pv = previsao(); let sel = [...verEscolhidos()];
+  const ex = c => { const xs = pending().slice(0, 3).map(s => c.v(s, pv)).filter(Boolean); return xs.length ? xs.join(", ") : (c.v(exemplo, pv) || ""); };
+  sheet(`<h3>O que você quer ver no mapa?</h3>
+    <p class="sub">Marque o que aparece do lado de cada parada enquanto você roda a rota e na tela de chegada. Dá para mudar quando quiser no botão <b>▤</b> ao lado do mapa.</p>
+    <div class="ver-prev" id="verPrev"></div>
+    <div class="ver-list">${VER_CAMPOS.map(c => `<label class="ver-op"><input type="checkbox" value="${c.k}" ${sel.includes(c.k) ? "checked" : ""}><span><b>${c.t}</b><em>${esc(c.d)}</em>${ex(c) ? `<small>Ex.: ${esc(ex(c))}</small>` : ""}</span></label>`).join("")}</div>
+    <div class="row" style="margin-top:12px"><button class="btn ghost" id="verPadrao" style="flex:1">Usar o padrão</button><button class="btn primary" id="verOk" style="flex:2">Salvar</button></div>`, bg => {
+    const prev = () => {
+      const vals = sel.map(k => VER_CAMPOS.find(c => c.k === k)).map(c => c.v(exemplo, pv)).filter(Boolean);
+      const outro = sel.filter(k => k !== "rua" && k !== "parada").map(k => VER_CAMPOS.find(c => c.k === k)).map(c => c.v(exemplo, pv)).filter(Boolean);
+      const rot = vs => vs.length ? `<span class="vp-lbl">${vs.map((v, i) => i ? `<em>${esc(v)}</em>` : `<b>${esc(v)}</b>`).join("")}</span>` : "";
+      bg.querySelector("#verPrev").innerHTML = `<span class="vp-tit">Assim vai aparecer no mapa:</span>
+        <div class="vp-map"><span class="pin next">1</span>${rot(vals) || "<em class='sub'>Só o número</em>"}<span class="vp-tag">parada atual</span></div>
+        <div class="vp-map"><span class="pin">2</span>${rot(outro) || "<em class='sub'>Só o número</em>"}<span class="vp-tag">outras paradas</span></div>`;
+    };
+    bg.querySelectorAll(".ver-op input").forEach(i => i.addEventListener("change", () => { sel = VER_CAMPOS.map(c => c.k).filter(k => bg.querySelector(`.ver-op input[value="${k}"]`).checked); prev(); }));
+    bg.querySelector("#verPadrao").addEventListener("click", () => { sel = [...VER_PADRAO]; bg.querySelectorAll(".ver-op input").forEach(i => i.checked = sel.includes(i.value)); prev(); });
+    bg.querySelector("#verOk").addEventListener("click", () => { st.settings.verMapa = sel; st.verAsked = Date.now(); save(); closeSheet(); drawMap(false); toast("Pronto! O mapa vai mostrar o que você marcou."); if (depois) depois(); });
+    prev();
+  });
+}
 function precisaPerguntarNav() { return !st.navAsked || !st.navV2 || Date.now() - st.navAsked > 604800000; }
 function navSheet(depois) {
   sheet(`<h3>Qual app você usa para navegar?</h3><p class="sub">Ao começar a rota, a tela do DeliveRota já aproxima e mostra cada curva. Escolha também onde abrir a navegação. Dá para trocar a qualquer hora no cartão da entrega.</p>
@@ -1366,7 +1507,7 @@ function navSheet(depois) {
     bg.querySelectorAll("[data-navpick]").forEach(b => b.addEventListener("click", () => {
       st.settings.nav = b.dataset.navpick; st.navAsked = Date.now(); st.navV2 = 1; save(); closeSheet(); renderNext();
       toast("Navegação pelo " + ({ waze: "Waze", app: "DeliveRota" }[st.settings.nav] || "Google Maps"));
-      if (depois) depois();
+      if (!st.verAsked && !depois) setTimeout(() => verMapaSheet(), 300); else if (depois) depois(); // na hora de começar a rota não atrasa: pergunta só no primeiro acesso
     }));
   });
 }
@@ -1438,6 +1579,7 @@ async function iniciarNavApp(s) {
   if (NV.watch == null) NV.watch = navigator.geolocation.watchPosition(novaPosicao, err => { if (err && err.code === 1) { pararNavApp(); toast("Libere a localização para o DeliveRota mostrar as curvas aqui no app.", 4500); } else $("#nbInstr").textContent = "Procurando o sinal do GPS..."; }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
   map.on("dragstart", soltouMapa);
   drawMap(false);
+  if (!$("#navVer")) { $(".mapcol").insertAdjacentHTML("beforeend", `<button id="navVer" class="navver" aria-label="Mudar o que aparece no mapa" title="Mudar o que aparece no mapa">▤</button>`); $("#navVer").addEventListener("click", () => verMapaSheet()); }
 }
 /* navegando: tocar numa parada do mapa → fazer esta agora (fora da ordem) e depois volta para a rota */
 function navParadaSheet(s) {
@@ -1510,7 +1652,7 @@ async function novaPosicao(pos) {
   if (mDist(eu, NV.alvo) < 35) {
     $("#nfEntregue").hidden = false;
     if (!NV.chegou) { NV.chegou = true; speak(`Você chegou. Parada ${stopNumber(NV.alvo)}, ${NV.alvo.street}, ${spokenNum(NV.alvo.num)}.`, true); beep(); }
-    $("#nbSeta").innerHTML = setaPasso({ maneuver: { type: "arrive" } }); $("#nbDist").textContent = "Chegou"; $("#nbInstr").textContent = addrLine(NV.alvo) + (NV.alvo.comp ? " · " + NV.alvo.comp : ""); $("#nbDepois").textContent = "Toque em Entregue quando terminar";
+    $("#nbSeta").innerHTML = setaPasso({ maneuver: { type: "arrive" } }); $("#nbDist").textContent = "Chegou"; $("#nbInstr").textContent = textoVer(NV.alvo, null).filter(v => !/^chega /.test(v)).join(" · ") || addrLine(NV.alvo); $("#nbDepois").textContent = "Toque em Entregue quando terminar";
     desenharNav(); return;
   }
   $("#nfEntregue").hidden = true;
@@ -1807,6 +1949,7 @@ function menuRotas() {
   sheet(`<h3>Rotas</h3>${st.rotaNome ? `<p class="sub">Rota atual: <b>${esc(st.rotaNome)}</b>${st.rotaData ? " · " + brOf(st.rotaData) : ""}</p>` : ""}
     <div class="menu-list">
       <button data-m="criar"><span>🗓</span><b>Criar rota</b><em>Com nome e data: hoje, amanhã ou outro dia</em></button>
+      <button data-m="ordem"${temSequencia() ? "" : " disabled"}><span>🔢</span><b>Ordem da planilha (Shopee)</b><em>${st.ordemPlanilha ? "Ligada: seguindo a sequência da transportadora" : "Seguir a sequência que vem na planilha"}</em></button>
       <button data-m="inifim"><span>🏠</span><b>Início e fim da rota</b><em>De onde sai e onde termina (ex.: voltar para casa)</em></button>
       <button data-m="salvas"><span>📂</span><b>Rotas salvas</b><em>${pl ? pl + " rota" + (pl > 1 ? "s" : "") + " para os próximos dias" : "Nenhuma ainda"}</em></button>
       <button data-m="anteriores"><span>↺</span><b>Reutilizar paradas anteriores</b><em>Endereços que você já entregou</em></button>
@@ -1819,6 +1962,7 @@ function menuRotas() {
       const m = b.dataset.m;
       if (m === "criar") criarRotaSheet();
       if (m === "inifim") inicioFimSheet();
+      if (m === "ordem") ordemSheet();
       if (m === "salvas") rotasSalvasSheet();
       if (m === "anteriores") anterioresSheet();
       if (m === "copia") compartilharSheet(false);
@@ -2122,7 +2266,11 @@ function handleCommand(raw, alts) {
   if (has("proxima", "repet", "onde", "qual", "endereco")) return sayNext();
   if (has("comandos", "o que posso falar")) { helpSheet(); return speak("Estes são os comandos.", true); }
   if (/^(como|onde|o que|ajuda|duvida|qual)\b/.test(t)) { helpSheet2(raw); const r = helpSearch(raw)[0]; return speak(r ? r.a.replace(/<[^>]+>/g, "") : "Não achei. Veja os temas na tela.", true); }
-  { const r = acharParadaFalada(alts); if (r.achou) return irParaParada(r.achou, true); if (r.opcoes && r.opcoes.length >= 2 && r.opcoes[0].pts >= 1.5) return escolherParadaSheet(r.opcoes, raw); }
+  // montando a rota (ainda não começou): o que não é comando é endereço novo, não "ir para"
+  if (rotaComecou()) { const r = acharParadaFalada(alts); const nums = numerosDaFala(norm(raw));
+    const numBate = x => !nums.length || nums.includes(parseInt(x.num, 10));
+    if (r.achou && numBate(r.achou)) return irParaParada(r.achou, true);
+    if (!nums.length && r.opcoes && r.opcoes.length >= 2 && r.opcoes[0].pts >= 1.5) return escolherParadaSheet(r.opcoes, raw); }
   // não é comando: se parece endereço, vira parada nova ("Vereador Antônio Menezes 120")
   { const e = falaParaEndereco(raw); if (e) {
       const a = parseAddressLine(STREET_RE.test(e) ? e : "Rua " + e);
@@ -2947,6 +3095,7 @@ document.addEventListener("click", e => {
   if (d.act === "addmore") { st.ultimaAdicao = 0; save(); go("add"); }
   if (d.act === "cancelroute") cancelarRota(t);
   if (d.act === "inifim") inicioFimSheet();
+  if (d.act === "ordem") ordemSheet();
   if (d.act === "desistir") desistirEComecar();
   if (d.act === "gasto") gastoSheet();
   if (d.gasto) gastoSheet((st.gastos || []).find(g => g.id === d.gasto));
@@ -2984,6 +3133,7 @@ document.addEventListener("change", e => { if (e.target.dataset.imp != null) imp
 $("#optBtn").addEventListener("click", () => { optimize(); st.otimizada = true; save(); renderNext(); });
 $("#locBtn").addEventListener("click", () => useGps(false));
 $("#pinBtn").addEventListener("click", () => setPinMode(pinMode === "new" ? null : "new"));
+{ const vb2 = $("#verBtn"); if (vb2) vb2.addEventListener("click", () => verMapaSheet()); }
 $("#setBtn").addEventListener("click", settingsSheet);
 $("#search").addEventListener("input", e => { searchQ = e.target.value; renderList(); });
 $("#scanFindBtn").addEventListener("click", () => openScanner("find"));
@@ -3119,6 +3269,7 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
   let saved = await dbGet("kv", "state:" + user.uid);
   if (!saved) { const legacy = await dbGet("kv", "state"); if (legacy) { saved = legacy; await dbDel("kv", "state"); } }
   if (saved && saved.stops) st = { ...DEFAULTS, ...saved, settings: { ...DEFAULTS.settings, ...(saved.settings || {}) } };
+  if (!st.stopMinV2) { if (st.settings.stopMin === 3) st.settings.stopMin = 1; st.stopMinV2 = 1; } // ~1 min por entrega, como os entregadores contam
   applyTheme(); netChip();
   conferirPlano(true);
   $("#today").textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }).replace(/^./, c => c.toUpperCase());
@@ -3127,6 +3278,7 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
   const veioComRota = location.hash.startsWith("#rota=");
   if (!st.onboarded) { if (st.settings.city && (st.stops.length || st.history.length)) st.onboarded = true; else if (veioComRota) { st.onboarded = true; st.settings.city = st.settings.city || "Belo Horizonte - MG"; save(); } else setTimeout(onboardSheet, 300); }
   if (st.onboarded && !st.navAsked && !veioComRota) setTimeout(() => { if (!$("#sheetHost").innerHTML) navSheet(); }, 500);
+  else if (st.onboarded && st.navAsked && !st.verAsked && !veioComRota) setTimeout(() => { if (!$("#sheetHost").innerHTML && !NV.on) verMapaSheet(); }, 1200); // quem já usava: mostra uma vez a escolha do que aparece no mapa
   if (!st.settings.city) st.settings.city = "Belo Horizonte - MG";
   if (map && st.cityCenter && !st.stops.some(hasGeo) && !st.start) map.setView([st.cityCenter.lat, st.cityCenter.lng], 13);
   st.stops.filter(s => !hasGeo(s) && s.geo !== "fail").forEach(queueGeocode);
@@ -3138,5 +3290,5 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
 })();
 
 // para testes automáticos
-window.DeliveRota = { handleOcr, map: () => map, previsao, inicioFimSheet, fimPt, comecarRota, trocarAlvoNav, empacotar, desempacotar, receberRotaDoLink, adicionarRapido, lerNotinha, gastoSheet, periodData, acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
+window.DeliveRota = { ordemDaPlanilha, ordemSheet, temSequencia, optimize, verMapaSheet, textoVer, handleOcr, map: () => map, previsao, inicioFimSheet, fimPt, comecarRota, trocarAlvoNav, empacotar, desempacotar, receberRotaDoLink, adicionarRapido, lerNotinha, gastoSheet, periodData, acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
 })();
