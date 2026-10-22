@@ -1975,6 +1975,45 @@ function gastoPorVoz(raw) {
   save(); renderGastos(); renderResumo();
   speak(`Gasto lançado: ${String(v).replace(".", ",")} reais de ${catNome(cat).toLowerCase()}.`, true); return true;
 }
+/* ===================== ganhos por plataforma (o entregador lança quanto cada plataforma pagou) ===================== */
+const ganhosDe = (de, ate) => (st.ganhos || []).filter(g => g.iso >= de && g.iso <= (ate || de));
+const totalGanhos = lista => lista.reduce((a, g) => a + (+g.valor || 0), 0);
+function ganhoSheet(g0) {
+  const novo = !g0; const g = g0 ? { ...g0 } : { id: uid(), iso: isoOf(new Date()), pl: st.platform || "", valor: "", km: "", pk: "", desc: "" };
+  sheet(`<div class="sec-h"><h3>${novo ? "Lançar ganho" : "Ganho"}</h3>${novo ? "" : `<span class="pill ok">${brOf(g.iso)}</span>`}</div>
+    <p class="sub">Registre quanto cada plataforma te pagou: o valor da rota, os km e os pacotes. É isso que monta o seu dashboard por plataforma.</p>
+    <div class="field"><label>Plataforma</label><div class="gcats" id="gaPl">${PLATS.map(pl => `<button type="button" data-pl="${esc(pl)}" aria-pressed="${g.pl === pl}">${esc(pl)}</button>`).join("")}</div></div>
+    <div class="grid2" style="margin-top:4px">
+      <div class="field"><label for="gaVal">Valor da rota (R$)</label><input id="gaVal" inputmode="decimal" placeholder="0,00" value="${g.valor !== "" ? String(g.valor).replace(".", ",") : ""}"></div>
+      <div class="field"><label for="gaDia">Dia</label><input id="gaDia" type="date" value="${g.iso}"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label for="gaPk">Pacotes</label><input id="gaPk" type="number" min="0" inputmode="numeric" value="${g.pk !== "" ? g.pk : ""}"></div>
+      <div class="field"><label for="gaKm">Km rodados</label><input id="gaKm" type="number" step="0.1" min="0" inputmode="decimal" value="${g.km !== "" ? g.km : ""}"></div>
+    </div>
+    <div class="field"><label for="gaDesc">Observação</label><input id="gaDesc" placeholder="Ex.: rota da manhã, região da Pampulha" value="${esc(g.desc || "")}"></div>
+    <div class="row">${novo ? `<button class="btn ghost" data-close>Cancelar</button>` : `<button class="btn warn" id="gaDel">Apagar</button>`}<button class="btn primary" id="gaSalvar">${novo ? "Salvar ganho" : "Salvar"}</button></div>`, () => {
+    $$("#gaPl button").forEach(b => b.addEventListener("click", () => { $$("#gaPl button").forEach(x => x.setAttribute("aria-pressed", x === b)); g.pl = b.dataset.pl; }));
+    $("#gaSalvar").addEventListener("click", () => {
+      const v = dinheiro(($("#gaVal").value || "").trim()) || parseFloat(($("#gaVal").value || "").replace(",", "."));
+      if (!(v > 0)) { toast("Coloque o valor que a plataforma pagou"); $("#gaVal").focus(); return; }
+      g.valor = Math.round(v * 100) / 100; g.iso = $("#gaDia").value || isoOf(new Date());
+      g.pk = Math.max(0, +$("#gaPk").value || 0); g.km = Math.max(0, parseFloat($("#gaKm").value) || 0); g.desc = $("#gaDesc").value.trim(); g.pl = g.pl || "Outra";
+      st.ganhos = st.ganhos || []; const i = st.ganhos.findIndex(x => x.id === g.id); if (i >= 0) st.ganhos[i] = g; else st.ganhos.push(g);
+      save(); closeSheet(); renderResumo(); toast(`Ganho salvo: R$ ${fmt(g.valor)}${g.pl ? " · " + g.pl : ""}`);
+    });
+    const del = $("#gaDel"); if (del) del.addEventListener("click", e => twoTap(e.currentTarget, "Toque de novo para apagar", () => { st.ganhos = (st.ganhos || []).filter(x => x.id !== g.id); save(); closeSheet(); renderResumo(); toast("Ganho apagado"); }));
+  });
+}
+/* lista dos ganhos por plataforma no período escolhido */
+function renderGanhos(p) {
+  const box = $("#ganhosBox"); if (!box) return;
+  const gl = ganhosDe(p.r.from, p.r.to).slice().sort((a, b) => a.iso < b.iso ? 1 : a.iso > b.iso ? -1 : (b.id < a.id ? -1 : 1));
+  const tot = totalGanhos(gl);
+  box.innerHTML = `<div class="gh-head"><h3 class="sub-h" style="margin:0">Ganhos por plataforma${gl.length ? " · R$ " + fmt(tot) : ""}</h3><button class="btn primary sm" data-act="ganho">+ Lançar ganho</button></div>
+    ${gl.length ? `<div class="gper">${gl.map(g => `<button class="gasto-row" data-ganho="${g.id}"><span class="gico">💰</span><span class="gtx"><b>${esc(g.pl || "Sem plataforma")}${g.desc ? " · " + esc(g.desc) : ""}</b><em>${esc(brOf(g.iso))}${g.pk ? " · " + g.pk + " pac." : ""}${g.km ? " · " + km1(g.km) + " km" : ""}</em></span><b class="gval">R$ ${fmt(g.valor)}</b></button>`).join("")}</div>`
+      : `<p class="sub">Lance quanto cada plataforma te pagou (Shopee, Mercado Livre…) com valor, km e pacotes. Aparece aqui e no dashboard “Qual plataforma paga melhor”.</p>`}`;
+}
 /* ===================== barra rápida, rotas com nome/data, paradas anteriores, compartilhar e manifesto ===================== */
 const AG_MAX = 400;
 function guardarNaAgenda(lista) {
@@ -2586,7 +2625,7 @@ function renderPeriod() {
     <div><b>${p.done}</b><span>entregas</span></div><div><b>${km1(p.km)}</b><span>km</span></div><div><b>R$ ${fmt(p.earn)}</b><span>ganho</span></div>
     <div class="fuel"><b>R$ ${fmt(p.fuel)}</b><span>gasolina</span></div><div class="fuel"><b>R$ ${fmt(p.wear + p.fixed)}</b><span>desgaste e fixos</span></div><div><b>R$ ${fmt(p.km ? p.cost / p.km : 0)}</b><span>custo por km</span></div>
     <div class="net"><b>R$ ${fmt(p.net)}</b><span>lucro real (ganho − todos os custos) · R$ ${fmt(p.days ? p.net / p.days : 0)} por dia${p.hours ? " · R$ " + fmt(p.net / p.hours) + " por hora" : ""}</span></div></div>`;
-  renderPlatCompare(p); renderGastosPeriodo(p); renderCharts(p);
+  renderGanhos(p); renderPlatCompare(p); renderGastosPeriodo(p); renderCharts(p);
   return p;
 }
 /* lista dos gastos do período escolhido, agrupados por dia (a notinha de qualquer dia aparece aqui) */
@@ -3219,6 +3258,8 @@ document.addEventListener("click", e => {
   if (d.act === "desistir") desistirEComecar();
   if (d.act === "gasto") gastoSheet();
   if (d.gasto) gastoSheet((st.gastos || []).find(g => g.id === d.gasto));
+  if (d.act === "ganho") ganhoSheet();
+  if (d.ganho) ganhoSheet((st.ganhos || []).find(g => g.id === d.ganho));
   if (d.navset) { st.settings.nav = d.navset; st.navAsked = Date.now(); st.navV2 = 1; save(); renderNext(); toast("Navegação pelo " + ({ waze: "Waze", app: "DeliveRota" }[d.navset] || "Google Maps")); if (d.navset === "app" && rotaComecou() && !NV.on) iniciarNavApp(); }
   if (d.act === "navapp") { if (NV.on) { NV.solto = false; if (NV.eu && map) map.setView([NV.eu.lat, NV.eu.lng], 18); } else iniciarNavApp(); }
   if (d.junto) { const x = byId(d.junto), a = pending()[0]; if (x && a) { st.stops.splice(st.stops.indexOf(x), 1); st.stops.splice(st.stops.indexOf(a) + 1, 0, x); save(); renderAll(false); toast("Parada " + stopNumber(x) + " vem logo depois desta"); } }
@@ -3410,5 +3451,5 @@ $("#aEye").addEventListener("click", e => { const b = e.currentTarget, on = b.ge
 })();
 
 // para testes automáticos
-window.DeliveRota = { addStops, showImport, menuRotas, ordemDaPlanilha, ordemSheet, temSequencia, optimize, verMapaSheet, textoVer, handleOcr, map: () => map, previsao, inicioFimSheet, fimPt, comecarRota, trocarAlvoNav, empacotar, desempacotar, receberRotaDoLink, adicionarRapido, lerNotinha, gastoSheet, periodData, acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
+window.DeliveRota = { addStops, showImport, menuRotas, ordemDaPlanilha, ordemSheet, temSequencia, optimize, verMapaSheet, textoVer, handleOcr, map: () => map, previsao, inicioFimSheet, fimPt, comecarRota, trocarAlvoNav, empacotar, desempacotar, receberRotaDoLink, adicionarRapido, lerNotinha, gastoSheet, ganhoSheet, periodData, acharParadaFalada, iniciarNavApp, pararNavApp, nav: () => NV, refinarPelasRuas, limparEndereco, parseAddressLine, extractAddresses, rowsToAddresses, twoOpt, hav, handleCommand, state: () => st, onScan, helpSearch, dayTotals, periodData, rangeOf, costsOf, odometer, curRate, renderAll, save, user: () => user };
 })();

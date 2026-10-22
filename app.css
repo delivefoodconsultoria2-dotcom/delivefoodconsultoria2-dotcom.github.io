@@ -60,6 +60,15 @@ body:not([data-tab="rota"]) .mapcol{display:none}
   .mapcol,body:not([data-tab="rota"]) .mapcol{display:block;grid-area:map;height:auto;min-height:0}
   .panel{grid-area:panel;border-left:1px solid var(--line)}
   .nav{grid-area:nav;border-left:1px solid var(--line)}
+  /* no Painel (financeiro), o mapa não precisa: a visão ocupa a tela toda do computador */
+  body[data-tab="resumo"] .app{grid-template-columns:1fr;grid-template-areas:"top" "panel" "nav"}
+  body[data-tab="resumo"] .mapcol{display:none}
+  body[data-tab="resumo"] .panel{border-left:0}
+  body[data-tab="resumo"] #s-resumo{max-width:1140px}
+  body[data-tab="resumo"] .fin-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px;align-items:start}
+  body[data-tab="resumo"] .fin-grid>div{min-width:0}
+  body[data-tab="resumo"] .fin-grid .fin-wide{grid-column:1 / -1}
+  body[data-tab="resumo"] .dash{max-width:none}
 }
 
 /* números */
@@ -620,6 +629,9 @@ body.navon #toast{top:auto!important;bottom:calc(170px + env(safe-area-inset-bot
 .gper-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:8px 0 2px}
 .gper-h b{font-size:14px}.gper-h span{font-size:12px;color:var(--muted)}
 .gper .gasto-row{margin-top:4px;padding:8px 0}
+/* cabeçalho do bloco de ganhos (título + botão lançar) */
+.gh-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px}
+.gh-head .btn.sm{min-height:38px;padding:0 12px;cursor:pointer}
 
 /* ===== visual novo: barra rápida e mapa tomando a tela ===== */
 .qbar{position:absolute;left:10px;right:10px;top:10px;z-index:650;display:flex;align-items:center;gap:6px;height:52px;padding:0 6px 0 14px;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 10px 28px -14px rgba(0,0,0,.45);color:var(--muted)}
