@@ -46,7 +46,7 @@ async function dbDel(store, key) { try { const d = await idb(); await new Promis
 
 /* ===================== estado ===================== */
 const DEFAULTS = {
-  gastos: [], agenda: [], planejadas: [], rotaNome: "", rotaData: "",
+  gastos: [], ganhos: [], agenda: [], planejadas: [], rotaNome: "", rotaData: "",
   stops: [], start: null, history: [], filter: "all",
   settings: { city: "Belo Horizonte - MG", rate: 3.5, vehicle: "moto", stopMin: 1, nav: "google", roundTrip: false, theme: "system",
     speak: true, kml: 0, fuelPrice: 6.19, autoRep: "none", repWa: "", repMail: "", msg: "Olá {nome}! Sou o entregador do seu pedido e chego em cerca de {min} minutos." }
@@ -2490,7 +2490,16 @@ function dayTotals() {
   const add = (iso, h, live) => { if (!iso) return; const x = m[iso] || (m[iso] = { iso, done: 0, fail: 0, pk: 0, km: 0, earn: 0, items: [], entries: [], live: false });
     x.hours = (x.hours || 0) + (h.hours || 0); x.plats = (x.plats || []).concat(h.plats || (h.platform ? [{ pl: h.platform, done: h.done, pk: h.pk, km: h.km, earn: h.earn, hours: h.hours || 0, days: 1 }] : [])); x.done += h.done || 0; x.fail += h.fail || 0; x.pk += h.pk || 0; x.km += h.km || 0; x.earn += h.earn || 0; if (h.items) x.items = x.items.concat(h.items); if (live) x.live = true; else x.entries.push(h); };
   st.history.forEach(h => add(histIso(h), h));
-  if (st.stops.some(s => s.status !== "pending")) add(isoOf(new Date()), todayEntry(), true);
+  const hojeIso = isoOf(new Date());
+  // dias com ganho lançado por plataforma: o valor lançado é o oficial do financeiro
+  const diasComGanho = new Set((st.ganhos || []).map(g => g.iso));
+  if (st.stops.some(s => s.status !== "pending")) {
+    const te = todayEntry();
+    if (diasComGanho.has(hojeIso)) { te.earn = 0; te.pk = 0; te.km = 0; te.plats = []; } // o ganho lançado manda; evita contar o valor duas vezes
+    add(hojeIso, te, true);
+  }
+  (st.ganhos || []).forEach(g => add(g.iso, { done: 0, fail: 0, pk: +g.pk || 0, km: +g.km || 0, earn: +g.valor || 0, hours: +g.hours || 0,
+    plats: [{ pl: g.pl || "Sem plataforma", done: +g.pk || 0, pk: +g.pk || 0, km: +g.km || 0, earn: +g.valor || 0, hours: +g.hours || 0, days: 1 }] }, false));
   return m;
 }
 let calYear = new Date().getFullYear(), calMonth = new Date().getMonth();
