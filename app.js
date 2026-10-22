@@ -1882,9 +1882,11 @@ async function gastoSheet(g0, preFoto) {
     };
     if (urlAntiga) mostra(urlAntiga);
     $$("#gCats button").forEach(b => b.addEventListener("click", () => { $$("#gCats button").forEach(x => x.setAttribute("aria-pressed", x === b)); g.cat = b.dataset.gcat; }));
+    let notaIso = null; // data lida na nota (só aviso; o gasto entra no dia de hoje por padrão)
     const preenche = r => {
       if (r.valor && !$("#gValor").value) $("#gValor").value = r.valor.toFixed(2).replace(".", ",");
-      if (r.iso && r.iso <= isoOf(new Date())) $("#gDia").value = r.iso;
+      // o gasto fica no dia que está sendo lançado (hoje); a data da nota vira aviso para o entregador mudar se quiser
+      if (novo && r.iso && r.iso <= isoOf(new Date())) notaIso = r.iso;
       if (r.cat && !g.cat) { g.cat = r.cat; $$("#gCats button").forEach(x => x.setAttribute("aria-pressed", x.dataset.gcat === r.cat)); }
       if (r.cat === "combustivel" && r.litros && !$("#gDesc").value) $("#gDesc").value = `${String(r.litros).replace(".", ",")} litros`;
     };
@@ -1906,7 +1908,8 @@ async function gastoSheet(g0, preFoto) {
           texto = r.data.text;
         }
         const r = lerNotinha(texto); preenche(r);
-        st_.textContent = r.valor ? `Li a nota: R$ ${fmt(r.valor)}${r.cat ? " · " + catNome(r.cat) : ""}. Confira e salve.` : "Não consegui ler o valor. Digite o valor da nota.";
+        const avisoDia = (notaIso && notaIso !== $("#gDia").value) ? ` A nota é de ${brOf(notaIso)} — mude o Dia se quiser.` : "";
+        st_.textContent = r.valor ? `Li a nota: R$ ${fmt(r.valor)}${r.cat ? " · " + catNome(r.cat) : ""}. Confira e salve.${avisoDia}` : "Não consegui ler o valor. Digite o valor da nota.";
       } catch (e) { st_.textContent = navigator.onLine ? "Não consegui ler a nota. Digite o valor." : "Sem internet para ler a nota agora. Digite o valor; a foto fica guardada."; }
     };
     $("#gCam").addEventListener("change", e => recebe(e.target.files[0]));
