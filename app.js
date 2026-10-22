@@ -46,7 +46,7 @@ async function dbDel(store, key) { try { const d = await idb(); await new Promis
 
 /* ===================== estado ===================== */
 const DEFAULTS = {
-  gastos: [], ganhos: [], agenda: [], planejadas: [], rotaNome: "", rotaData: "",
+  gastos: [], ganhos: [], reserva: { mov: [] }, agenda: [], planejadas: [], rotaNome: "", rotaData: "",
   stops: [], start: null, history: [], filter: "all",
   settings: { city: "Belo Horizonte - MG", rate: 3.5, vehicle: "moto", stopMin: 1, nav: "google", roundTrip: false, theme: "system",
     speak: true, kml: 0, fuelPrice: 6.19, autoRep: "none", repWa: "", repMail: "", msg: "Olá {nome}! Sou o entregador do seu pedido e chego em cerca de {min} minutos." }
@@ -2014,6 +2014,44 @@ function renderGanhos(p) {
     ${gl.length ? `<div class="gper">${gl.map(g => `<button class="gasto-row" data-ganho="${g.id}"><span class="gico">💰</span><span class="gtx"><b>${esc(g.pl || "Sem plataforma")}${g.desc ? " · " + esc(g.desc) : ""}</b><em>${esc(brOf(g.iso))}${g.pk ? " · " + g.pk + " pac." : ""}${g.km ? " · " + km1(g.km) + " km" : ""}</em></span><b class="gval">R$ ${fmt(g.valor)}</b></button>`).join("")}</div>`
       : `<p class="sub">Lance quanto cada plataforma te pagou (Shopee, Mercado Livre…) com valor, km e pacotes. Aparece aqui e no dashboard “Qual plataforma paga melhor”.</p>`}`;
 }
+/* ===================== reserva e cofrinhos (o entregador guarda dinheiro: INSS, 13º, férias, emergência) ===================== */
+const COFRES = ["Emergência", "INSS / Aposentadoria", "13º próprio", "Férias próprias", "Troca de veículo", "Geral"];
+function reservaMov() { return (st.reserva && st.reserva.mov) || []; }
+const saldoReserva = () => reservaMov().reduce((a, m) => a + m.dir * (+m.valor || 0), 0);
+const saldoCofre = nome => reservaMov().filter(m => (m.cofre || "Geral") === nome).reduce((a, m) => a + m.dir * (+m.valor || 0), 0);
+function reservaSheet(dir) {
+  const guardar = dir > 0;
+  sheet(`<div class="sec-h"><h3>${guardar ? "Guardar na reserva" : "Retirar da reserva"}</h3><span class="pill ok">Reserva: R$ ${fmt(saldoReserva())}</span></div>
+    <p class="sub">${guardar ? "Separe um dinheiro pra não faltar depois (emergência, INSS, 13º, férias...)." : "Tirar da reserva pra usar. Fica registrado pra você saber pra onde foi."}</p>
+    <div class="grid2" style="margin-top:4px">
+      <div class="field"><label for="rvVal">Valor (R$)</label><input id="rvVal" inputmode="decimal" placeholder="0,00"></div>
+      <div class="field"><label for="rvDia">Dia</label><input id="rvDia" type="date" value="${isoOf(new Date())}"></div>
+    </div>
+    <div class="field"><label>Cofrinho</label><div class="gcats" id="rvCofre">${COFRES.map((c, i) => `<button type="button" data-cofre="${esc(c)}" aria-pressed="${i === 0}">${esc(c)}</button>`).join("")}</div></div>
+    <div class="field"><label for="rvDesc">Observação</label><input id="rvDesc" placeholder="Ex.: 10% da rota de hoje"></div>
+    <div class="row"><button class="btn ghost" data-close>Cancelar</button><button class="btn primary" id="rvOk">${guardar ? "Guardar" : "Retirar"}</button></div>`, () => {
+    let cofre = COFRES[0];
+    $$("#rvCofre button").forEach(b => b.addEventListener("click", () => { $$("#rvCofre button").forEach(x => x.setAttribute("aria-pressed", x === b)); cofre = b.dataset.cofre; }));
+    $("#rvOk").addEventListener("click", () => {
+      const v = dinheiro(($("#rvVal").value || "").trim()) || parseFloat(($("#rvVal").value || "").replace(",", "."));
+      if (!(v > 0)) { toast("Coloque o valor"); $("#rvVal").focus(); return; }
+      if (!guardar && v > saldoCofre(cofre)) { toast(`No cofrinho "${cofre}" só tem R$ ${fmt(saldoCofre(cofre))}`); return; }
+      st.reserva = st.reserva || { mov: [] }; st.reserva.mov = st.reserva.mov || [];
+      st.reserva.mov.push({ id: uid(), iso: $("#rvDia").value || isoOf(new Date()), dir: guardar ? 1 : -1, valor: Math.round(v * 100) / 100, cofre, desc: $("#rvDesc").value.trim() });
+      save(); closeSheet(); renderResumo(); toast(`${guardar ? "Guardado" : "Retirado"}: R$ ${fmt(v)} · ${cofre}`);
+    });
+  });
+}
+function renderReserva() {
+  const box = $("#reservaBox"); if (!box) return;
+  const total = saldoReserva();
+  const cofres = COFRES.map(c => ({ c, v: saldoCofre(c) })).filter(o => o.v > 0);
+  box.innerHTML = `<div class="rv-card">
+    <div class="rv-top"><div><span>Guardado na reserva</span><b>R$ ${fmt(total)}</b></div>
+      <div class="rv-bt"><button class="btn primary sm" data-act="reservaGuardar">Guardar</button><button class="btn ghost sm" data-act="reservaRetirar">Retirar</button></div></div>
+    ${cofres.length ? `<div class="rv-cofres">${cofres.map(o => `<div class="rv-cof"><span>${esc(o.c)}</span><b>R$ ${fmt(o.v)}</b></div>`).join("")}</div>`
+      : `<p class="sub" style="margin:8px 0 0">Separe um pouco de cada rota pra não faltar depois: emergência, INSS, 13º e férias (você não tem patrão guardando pra você).</p>`}</div>`;
+}
 /* ===================== barra rápida, rotas com nome/data, paradas anteriores, compartilhar e manifesto ===================== */
 const AG_MAX = 400;
 function guardarNaAgenda(lista) {
@@ -2621,11 +2659,26 @@ function renderPeriod() {
   $("#perCustom").hidden = perKind !== "custom";
   const ref = perKind === "month" ? new Date(calYear, calMonth, 15) : perKind === "year" ? new Date(calYear, 5, 1) : new Date();
   const p = periodData(rangeOf(perKind, ref));
-  $("#perSum").innerHTML = `<p class="sub" style="margin:0 0 6px">${esc(p.r.label.charAt(0).toUpperCase() + p.r.label.slice(1))} · ${p.days} ${p.days === 1 ? "dia trabalhado" : "dias trabalhados"}</p><div class="persum">
+  // comparativo com o período anterior (mês passado, semana passada...)
+  const antRef = perKind === "month" ? new Date(calYear, calMonth - 1, 15)
+    : perKind === "year" ? new Date(calYear - 1, 5, 1)
+      : perKind === "week" ? new Date(Date.now() - 7 * 864e5)
+        : perKind === "today" ? new Date(Date.now() - 864e5) : null;
+  const nomeAnt = { month: "mês passado", year: "ano passado", week: "semana passada", today: "ontem" }[perKind];
+  let comp = "";
+  if (antRef) {
+    const pa = periodData(rangeOf(perKind, antRef));
+    if (pa.earn > 0 || pa.net !== 0) {
+      const dl = p.net - pa.net, pct = pa.net !== 0 ? Math.round(dl / Math.abs(pa.net) * 100) : null;
+      const up = dl >= 0;
+      comp = `<span class="comp ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${pct != null ? Math.abs(pct) + "%" : "R$ " + fmt(Math.abs(dl))} de lucro vs ${nomeAnt}</span>`;
+    }
+  }
+  $("#perSum").innerHTML = `<p class="sub" style="margin:0 0 6px">${esc(p.r.label.charAt(0).toUpperCase() + p.r.label.slice(1))} · ${p.days} ${p.days === 1 ? "dia trabalhado" : "dias trabalhados"} ${comp}</p><div class="persum">
     <div><b>${p.done}</b><span>entregas</span></div><div><b>${km1(p.km)}</b><span>km</span></div><div><b>R$ ${fmt(p.earn)}</b><span>ganho</span></div>
     <div class="fuel"><b>R$ ${fmt(p.fuel)}</b><span>gasolina</span></div><div class="fuel"><b>R$ ${fmt(p.wear + p.fixed)}</b><span>desgaste e fixos</span></div><div><b>R$ ${fmt(p.km ? p.cost / p.km : 0)}</b><span>custo por km</span></div>
     <div class="net"><b>R$ ${fmt(p.net)}</b><span>lucro real (ganho − todos os custos) · R$ ${fmt(p.days ? p.net / p.days : 0)} por dia${p.hours ? " · R$ " + fmt(p.net / p.hours) + " por hora" : ""}</span></div></div>`;
-  renderGanhos(p); renderPlatCompare(p); renderGastosPeriodo(p); renderCharts(p);
+  renderReserva(); renderGanhos(p); renderPlatCompare(p); renderGastosPeriodo(p); renderCharts(p);
   return p;
 }
 /* lista dos gastos do período escolhido, agrupados por dia (a notinha de qualquer dia aparece aqui) */
@@ -3260,6 +3313,9 @@ document.addEventListener("click", e => {
   if (d.gasto) gastoSheet((st.gastos || []).find(g => g.id === d.gasto));
   if (d.act === "ganho") ganhoSheet();
   if (d.ganho) ganhoSheet((st.ganhos || []).find(g => g.id === d.ganho));
+  if (d.act === "reservaGuardar") reservaSheet(1);
+  if (d.act === "reservaRetirar") reservaSheet(-1);
+  if (d.act === "financeiro") { go("resumo"); if (perKind !== "month") { perKind = "month"; grpKind = "day"; } renderResumo(); }
   if (d.navset) { st.settings.nav = d.navset; st.navAsked = Date.now(); st.navV2 = 1; save(); renderNext(); toast("Navegação pelo " + ({ waze: "Waze", app: "DeliveRota" }[d.navset] || "Google Maps")); if (d.navset === "app" && rotaComecou() && !NV.on) iniciarNavApp(); }
   if (d.act === "navapp") { if (NV.on) { NV.solto = false; if (NV.eu && map) map.setView([NV.eu.lat, NV.eu.lng], 18); } else iniciarNavApp(); }
   if (d.junto) { const x = byId(d.junto), a = pending()[0]; if (x && a) { st.stops.splice(st.stops.indexOf(x), 1); st.stops.splice(st.stops.indexOf(a) + 1, 0, x); save(); renderAll(false); toast("Parada " + stopNumber(x) + " vem logo depois desta"); } }

@@ -616,6 +616,13 @@ body.navon #toast{top:auto!important;bottom:calc(170px + env(safe-area-inset-bot
 .gtx b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.gtx em{font-style:normal;font-size:12px;color:var(--muted)}
 .gval{flex:none;font-size:15px}
 .gasto-mini{flex:none;border:1px dashed var(--line);background:var(--surface);color:var(--green-strong);border-radius:12px;padding:0 12px;font:inherit;font-weight:800;font-size:14px;min-height:44px;cursor:pointer}
+/* botão destacado de entrada no Controle Financeiro */
+.fin-entry{display:flex;align-items:center;gap:12px;width:100%;margin:10px 0 2px;padding:14px 16px;border:0;border-radius:16px;cursor:pointer;font:inherit;text-align:left;color:#fff;background:linear-gradient(100deg,var(--green-strong),var(--green));box-shadow:0 12px 26px -14px var(--green-strong)}
+.fin-entry .fe-ic{font-size:24px;flex:none}
+.fin-entry .fe-tx{flex:1;min-width:0;display:flex;flex-direction:column}
+.fin-entry .fe-tx b{font-family:var(--display);font-size:17px}
+.fin-entry .fe-tx em{font-style:normal;font-size:12.5px;opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fin-entry .fe-go{font-size:22px;font-weight:800;flex:none;opacity:.9}
 .dayx{grid-template-columns:1fr auto 128px}
 /* escolha do dia do gasto (hoje x dia da nota) */
 .gdia-esc{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 2px}
@@ -632,6 +639,21 @@ body.navon #toast{top:auto!important;bottom:calc(170px + env(safe-area-inset-bot
 /* cabeçalho do bloco de ganhos (título + botão lançar) */
 .gh-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px}
 .gh-head .btn.sm{min-height:38px;padding:0 12px;cursor:pointer}
+/* comparativo mês a mês */
+.comp{display:inline-block;font-size:12px;font-weight:800;padding:1px 8px;border-radius:99px;margin-left:4px}
+.comp.up{background:var(--green-soft);color:var(--green-strong)}
+.comp.down{background:var(--amber-soft);color:var(--ink)}
+/* reserva e cofrinhos */
+.rv-card{border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin:6px 0 12px;background:var(--surface)}
+.rv-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.rv-top span{display:block;font-size:12.5px;color:var(--muted);font-weight:700}
+.rv-top b{font-family:var(--display);font-size:24px}
+.rv-bt{display:flex;gap:8px}
+.rv-bt .btn.sm{min-height:40px;padding:0 14px;cursor:pointer}
+.rv-cofres{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:10px}
+.rv-cof{border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.rv-cof span{display:block;font-size:12px;color:var(--muted);font-weight:700}
+.rv-cof b{font-size:16px}
 
 /* ===== visual novo: barra rápida e mapa tomando a tela ===== */
 .qbar{position:absolute;left:10px;right:10px;top:10px;z-index:650;display:flex;align-items:center;gap:6px;height:52px;padding:0 6px 0 14px;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 10px 28px -14px rgba(0,0,0,.45);color:var(--muted)}
