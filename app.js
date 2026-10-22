@@ -2815,7 +2815,7 @@ function adminSheet() {
 }
 
 /* ===================== plataformas, custos, metas, manutenção ===================== */
-const PLATS = ["Mercado Livre", "Shopee", "Amazon", "Correios", "Loggi", "J&T", "Magalu", "iFood", "Particular", "Outra"];
+const PLATS = ["Mercado Livre", "Shopee", "Amazon", "Correios", "Loggi", "J&T", "Magalu", "Shopee Xpress", "Total Express", "Particular", "Outra"];
 const rateFor = pl => { const r = (st.settings.platRates || {})[pl]; return r > 0 ? r : st.settings.rate; };
 const curRate = () => rateFor(st.platform || "");
 const OTHER_KM_DEFAULT = { moto: 0.12, carro: 0.25, bike: 0.02, pe: 0 };
@@ -2961,11 +2961,12 @@ function renderPlatCompare(p) {
   p.list.forEach(d => (d.plats && d.plats.length ? d.plats : [{ pl: "Sem plataforma", done: d.done, pk: d.pk, km: d.km, earn: d.earn, hours: d.hours || 0, days: 1 }]).forEach(x => {
     const k = x.pl || "Sem plataforma"; const a = g[k] || (g[k] = { pl: k, days: 0, done: 0, km: 0, earn: 0, hours: 0 });
     a.days += x.days || 1; a.done += x.done || 0; a.km += x.km || 0; a.earn += x.earn || 0; a.hours += x.hours || 0; }));
-  const rows = Object.values(g).map(a => { const c = costsOf(a.km, a.days); return { ...a, net: a.earn - c.total, perKm: a.km ? (a.earn - c.total) / a.km : 0, perH: a.hours ? (a.earn - c.total) / a.hours : 0 }; }).sort((a, b) => b.perKm - a.perKm);
+  const rows = Object.values(g).map(a => { const c = costsOf(a.km, a.days); return { ...a, net: a.earn - c.total, perKm: a.km ? (a.earn - c.total) / a.km : 0, perH: a.hours ? (a.earn - c.total) / a.hours : 0 }; }).sort((a, b) => b.earn - a.earn);
   if (!rows.length || (rows.length === 1 && rows[0].pl === "Sem plataforma")) { box.innerHTML = `<h3 class="sub-h">Qual plataforma paga melhor</h3><p class="sub">Escolha a plataforma do dia no cartão da Rota. Depois de alguns dias aparece aqui a comparação.</p>`; return; }
-  box.innerHTML = `<h3 class="sub-h">Qual plataforma paga melhor</h3><div class="tbl"><table><thead><tr><th>Plataforma</th><th>Dias</th><th>Lucro</th><th>Lucro/km</th><th>Lucro/hora</th></tr></thead><tbody>
-    ${rows.map((r, i) => `<tr${i === 0 ? ' class="top1"' : ""}><td>${esc(r.pl)}</td><td>${r.days}</td><td>R$ ${fmt(r.net)}</td><td>R$ ${fmt(r.perKm)}</td><td>${r.hours ? "R$ " + fmt(r.perH) : "-"}</td></tr>`).join("")}</tbody></table></div>
-    <p class="hint">Lucro já descontando gasolina, desgaste e custos fixos.</p>`;
+  const totEarn = rows.reduce((a, r) => a + r.earn, 0) || 1;
+  box.innerHTML = `<h3 class="sub-h">Qual plataforma paga melhor</h3><div class="tbl"><table><thead><tr><th>Plataforma</th><th>Dias</th><th>Faturou</th><th>% do total</th><th>Lucro</th><th>Lucro/km</th><th>Lucro/hora</th></tr></thead><tbody>
+    ${rows.map((r, i) => `<tr${i === 0 ? ' class="top1"' : ""}><td>${esc(r.pl)}</td><td>${r.days}</td><td>R$ ${fmt(r.earn)}</td><td>${Math.round(r.earn / totEarn * 100)}%</td><td>R$ ${fmt(r.net)}</td><td>R$ ${fmt(r.perKm)}</td><td>${r.hours ? "R$ " + fmt(r.perH) : "-"}</td></tr>`).join("")}</tbody></table></div>
+    <p class="hint">"Faturou" é o quanto a plataforma te pagou no período; "% do total" é o quanto ela representa do seu faturamento. Lucro já desconta gasolina, desgaste e custos fixos.</p>`;
 }
 /* lembrete do MEI (não bloqueia nada, só avisa) */
 function meiCheck() {
