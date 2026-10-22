@@ -1037,7 +1037,7 @@ function deliverSheet(s) {
     $("#okDeliver").addEventListener("click", async () => {
       s.status = "delivered"; s.recv = $("#recv").value + ($("#rname").value ? ": " + $("#rname").value : ""); s.doneAt = Date.now(); stampWhere(s);
       if (blob) { await dbSet("photos", s.id, blob); s.photo = true; }
-      save(); closeSheet(); renderAll(false); beep(); toast(pending().length ? "Entrega registrada. Próxima!" : "Última entrega feita!"); sayNext("Entrega registrada. ");
+      save(); closeSheet(); renderAll(false); beep(); avancarNav(s); toast(pending().length ? "Entrega registrada. Próxima!" : "Última entrega feita!"); sayNext("Entrega registrada. ");
     });
   });
 }
@@ -1056,7 +1056,7 @@ function failSheet(s) {
     $("#okFail").addEventListener("click", async () => {
       s.status = "failed"; s.reason = reason; s.note = $("#fnote").value; s.doneAt = Date.now(); stampWhere(s); if ($("#fRem") && $("#fRem").checked && s.note) setAddrNote(s, s.note);
       if (blob) { await dbSet("photos", s.id, blob); s.photo = true; }
-      save(); closeSheet(); renderAll(false); beep(false); toast("Registrado. Seguindo para a próxima."); sayNext();
+      save(); closeSheet(); renderAll(false); beep(false); avancarNav(s); toast("Registrado. Seguindo para a próxima."); sayNext();
     });
   });
 }
@@ -1091,7 +1091,7 @@ function readFields() {
 }
 async function stopSheet(s) {
   const photo = s.photo ? await dbGet("photos", s.id) : null;
-  sheet(`<div class="sec-h"><h3>Parada ${stopNumber(s)}</h3><span class="pill ${s.status === "delivered" ? "ok" : s.status === "failed" ? "bad" : "win"}">${{ pending: "Pendente", delivered: "Entregue", failed: "Não entregue" }[s.status]}</span></div>
+  sheet(`<div class="sec-h"><h3>Parada ${stopNumber(s)}</h3><span class="pill ${s.status === "delivered" ? "ok" : s.status === "failed" ? "bad" : s.standby ? "sb" : "win"}">${s.status === "pending" ? (s.standby ? "Standby" : "Pendente") : s.status === "delivered" ? "Entregue" : "Não entregue"}</span></div>
     <p class="sub">${esc(addrFull(s))}</p>
     ${s.status === "delivered" ? `<p class="note">Recebido por: ${esc(s.recv || "-")} · ${s.doneAt ? new Date(s.doneAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}</p>` : ""}
     ${s.status === "failed" ? `<p class="note">${esc(s.reason)}${s.note ? " · " + esc(s.note) : ""}</p>` : ""}
@@ -1101,7 +1101,7 @@ async function stopSheet(s) {
     <button class="btn ghost sm" id="aNoteSave">Salvar observação</button>
     <div id="editBox" hidden style="margin-top:12px">${stopFields(s)}<div class="row"><button class="btn ghost" id="cancelEdit">Cancelar</button><button class="btn primary" id="saveEdit">Salvar e localizar</button></div></div>
     <div id="actBox" class="stack" style="margin-top:12px">
-      ${s.status === "pending" ? `<div class="row"><button class="btn primary" id="aDel">Entregue</button><button class="btn warn" id="aFail">Não entregue</button></div><button class="btn ghost" id="aNext">Fazer esta agora (mover para próxima)</button>` : `<button class="btn ghost" id="aBack">Voltar para pendente</button>`}
+      ${s.status === "pending" ? `<div class="row"><button class="btn primary" id="aDel">Entregue</button><button class="btn warn" id="aFail">Não entregue</button></div><div class="row"><button class="btn ghost" id="aNext">Fazer esta agora</button><button class="btn ghost" id="aStandby">${s.standby ? "Já está em standby" : "Deixar para depois (standby)"}</button></div>` : `<button class="btn ghost" id="aBack">Voltar para pendente</button>`}
       <div class="row"><button class="btn ghost" id="aEdit">Editar</button><button class="btn ghost" id="aPin">Ajustar no mapa</button></div>
       <div class="row"><button class="btn ghost" id="aContact">Contato</button><button class="btn warn" id="aRemove">Excluir parada</button></div>
       <button class="btn ghost" data-close>Fechar</button>
@@ -1109,7 +1109,8 @@ async function stopSheet(s) {
     const on = (id, fn) => { const b = $("#" + id); if (b) b.addEventListener("click", fn); };
     on("aProof", () => proofPdf(s)); on("aNoteSave", () => { setAddrNote(s, $("#aNote").value); renderAll(false); toast("Observação salva para este endereço"); });
     on("aDel", () => deliverSheet(s)); on("aFail", () => failSheet(s)); on("aContact", () => contactSheet(s));
-    on("aNext", () => { const p = pending(); const first = st.stops.indexOf(p[0]); st.stops.splice(st.stops.indexOf(s), 1); st.stops.splice(first, 0, s); save(); closeSheet(); renderAll(false); go("rota"); });
+    on("aNext", () => { s.standby = false; const p = pending(); const first = st.stops.indexOf(p[0]); st.stops.splice(st.stops.indexOf(s), 1); st.stops.splice(first, 0, s); save(); closeSheet(); renderAll(false); go("rota"); if (NV.on) trocarAlvoNav(s); });
+    on("aStandby", () => { s.standby = true; st.stops.splice(st.stops.indexOf(s), 1); st.stops.push(s); save(); closeSheet(); renderAll(false); avancarNav(s); toast("Parada em standby. Você volta nela quando quiser: abra a parada e toque em “Fazer esta agora”."); });
     on("aBack", () => { s.status = "pending"; s.reason = ""; s.doneAt = null; st.stops.splice(st.stops.indexOf(s), 1); st.stops.push(s); save(); closeSheet(); renderAll(false); toast("Voltou para o fim da rota"); });
     on("aEdit", () => { $("#editBox").hidden = false; $("#actBox").hidden = true; });
     on("cancelEdit", () => { $("#editBox").hidden = true; $("#actBox").hidden = false; });
@@ -1647,11 +1648,15 @@ function navParadaSheet(s) {
   sheet(`<h3>Parada ${stopNumber(s)}</h3><p class="sub"><b>${esc(addrLine(s))}</b>${s.comp ? " · " + esc(s.comp) : ""}${s.client ? "<br>" + esc(s.client) : ""}${d ? "<br>" + d + " de você" : ""}</p>
     <div class="col" style="display:flex;flex-direction:column;gap:8px">
       ${s.status === "pending" && NV.alvo !== s ? `<button class="btn primary" id="npIr">Fazer esta agora</button>` : ""}
-      ${s.status === "pending" ? `<button class="btn ghost" id="npOk">Já entreguei esta</button>` : ""}
+      ${s.status === "pending" ? `<button class="btn primary" id="npOk">Já entreguei esta</button>` : ""}
+      ${s.status === "pending" ? `<button class="btn warn" id="npFail">Não entregue</button>` : ""}
+      ${s.status === "pending" ? `<button class="btn ghost" id="npSb">${s.standby ? "Já está em standby" : "Deixar para depois (standby)"}</button>` : ""}
       <button class="btn ghost" id="npFecha">Fechar</button></div>
-    <p class="sub" style="margin-top:8px">Depois desta, a navegação volta sozinha para a ordem da rota.</p>`, bg => {
+    <p class="sub" style="margin-top:8px">Em standby, a parada fica guardada e você volta nela quando quiser. A navegação já segue para a próxima.</p>`, bg => {
     const ir = bg.querySelector("#npIr"); if (ir) ir.addEventListener("click", () => { closeSheet(); trocarAlvoNav(s); });
     const okb = bg.querySelector("#npOk"); if (okb) okb.addEventListener("click", () => { closeSheet(); deliverSheet(s); });
+    const fb = bg.querySelector("#npFail"); if (fb) fb.addEventListener("click", () => { closeSheet(); failSheet(s); });
+    const sb = bg.querySelector("#npSb"); if (sb) sb.addEventListener("click", () => { s.standby = true; st.stops.splice(st.stops.indexOf(s), 1); st.stops.push(s); save(); closeSheet(); renderAll(false); avancarNav(s); toast("Parada em standby. Você volta nela quando quiser: toque nela e “Fazer esta agora”."); });
     bg.querySelector("#npFecha").addEventListener("click", closeSheet);
   });
 }
@@ -1663,6 +1668,15 @@ function trocarAlvoNav(s) {
   if (NV.layer) NV.layer.clearLayers();
   drawMap(false); if (NV.eu) novaPosicao({ coords: { latitude: NV.eu.lat, longitude: NV.eu.lng, heading: null, speed: 0 } });
   if (st.settings.speak) try { speak(`Indo para a parada ${stopNumber(s)}, ${s.street}, ${spokenNum(s.num || "sem número")}.`); } catch (e) {}
+}
+/* depois de entregar/não entregar: já aponta a navegação para a próxima parada pendente (sem esperar o GPS) */
+function avancarNav(feito) {
+  if (!NV.on) return;
+  // se o alvo atual ainda é uma parada pendente diferente da que acabou, mantém (ele pode ter escolhido "fazer esta agora")
+  if (NV.alvo && NV.alvo.status === "pending" && NV.alvo !== feito) return;
+  const prox = pending()[0];
+  if (!prox) { pararNavApp(); return; }
+  trocarAlvoNav(prox);
 }
 /* passando perto de outra parada (fora da ordem): oferece fazer agora */
 function avisoPerto(eu) {
@@ -1869,8 +1883,9 @@ async function gastoSheet(g0, preFoto) {
     <p class="hint" id="gLendo" hidden></p>
     <div class="grid2" style="margin-top:10px">
       <div class="field"><label for="gValor">Valor (R$)</label><input id="gValor" inputmode="decimal" placeholder="0,00" value="${g.valor !== "" ? String(g.valor).replace(".", ",") : ""}"></div>
-      <div class="field"><label for="gDia">Dia</label><input id="gDia" type="date" value="${g.iso}"></div>
+      <div class="field"><label for="gDia">Dia do gasto</label><input id="gDia" type="date" value="${g.iso}"></div>
     </div>
+    <div id="gDiaEscolha" class="gdia-esc" hidden></div>
     <div class="field"><label>Tipo</label><div class="gcats" id="gCats">${GASTO_CATS.map(([k, n, ic]) => `<button type="button" data-gcat="${k}" aria-pressed="${g.cat === k}">${ic} ${n}</button>`).join("")}</div></div>
     <div class="field"><label for="gDesc">Descrição</label><input id="gDesc" placeholder="Ex.: gasolina do posto da Amazonas, 10 litros" value="${esc(g.desc || "")}"></div>
     <div class="field"><label for="gPag">Pago com</label><select id="gPag"><option value="">—</option>${["Dinheiro", "Pix", "Cartão de débito", "Cartão de crédito", "Vale / empresa"].map(x => `<option${g.pag === x ? " selected" : ""}>${x}</option>`).join("")}</select></div>
@@ -1882,14 +1897,27 @@ async function gastoSheet(g0, preFoto) {
     };
     if (urlAntiga) mostra(urlAntiga);
     $$("#gCats button").forEach(b => b.addEventListener("click", () => { $$("#gCats button").forEach(x => x.setAttribute("aria-pressed", x === b)); g.cat = b.dataset.gcat; }));
-    let notaIso = null; // data lida na nota (só aviso; o gasto entra no dia de hoje por padrão)
+    let notaIso = null; // data lida na nota: o entregador escolhe se o gasto entra hoje ou no dia da nota
+    const hoje = isoOf(new Date());
+    const escolheDia = iso => { $("#gDia").value = iso; mostraEscolhaDia(); };
+    const mostraEscolhaDia = () => {
+      const box = $("#gDiaEscolha"); if (!box) return;
+      if (!notaIso || notaIso === hoje) { box.hidden = true; box.innerHTML = ""; return; }
+      const atual = $("#gDia").value;
+      box.hidden = false;
+      box.innerHTML = `<span class="gdia-q">Em que dia esse gasto entra?</span>
+        <button type="button" data-dia="${hoje}" aria-pressed="${atual === hoje}">Hoje (${brOf(hoje).slice(0, 5)})</button>
+        <button type="button" data-dia="${notaIso}" aria-pressed="${atual === notaIso}">Dia da nota (${brOf(notaIso).slice(0, 5)})</button>`;
+      box.querySelectorAll("[data-dia]").forEach(b => b.addEventListener("click", () => escolheDia(b.dataset.dia)));
+    };
     const preenche = r => {
       if (r.valor && !$("#gValor").value) $("#gValor").value = r.valor.toFixed(2).replace(".", ",");
-      // o gasto fica no dia que está sendo lançado (hoje); a data da nota vira aviso para o entregador mudar se quiser
-      if (novo && r.iso && r.iso <= isoOf(new Date())) notaIso = r.iso;
+      // guarda a data lida; por padrão o gasto fica no dia de hoje, mas o entregador pode escolher o dia da nota
+      if (novo && r.iso && r.iso <= hoje) { notaIso = r.iso; mostraEscolhaDia(); }
       if (r.cat && !g.cat) { g.cat = r.cat; $$("#gCats button").forEach(x => x.setAttribute("aria-pressed", x.dataset.gcat === r.cat)); }
       if (r.cat === "combustivel" && r.litros && !$("#gDesc").value) $("#gDesc").value = `${String(r.litros).replace(".", ",")} litros`;
     };
+    $("#gDia").addEventListener("change", () => mostraEscolhaDia());
     const recebe = async file => {
       if (!file) return;
       const ehPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
@@ -1908,7 +1936,7 @@ async function gastoSheet(g0, preFoto) {
           texto = r.data.text;
         }
         const r = lerNotinha(texto); preenche(r);
-        const avisoDia = (notaIso && notaIso !== $("#gDia").value) ? ` A nota é de ${brOf(notaIso)} — mude o Dia se quiser.` : "";
+        const avisoDia = (notaIso && notaIso !== hoje) ? ` A nota é de ${brOf(notaIso)} — escolha abaixo em que dia ela entra.` : "";
         st_.textContent = r.valor ? `Li a nota: R$ ${fmt(r.valor)}${r.cat ? " · " + catNome(r.cat) : ""}. Confira e salve.${avisoDia}` : "Não consegui ler o valor. Digite o valor da nota.";
       } catch (e) { st_.textContent = navigator.onLine ? "Não consegui ler a nota. Digite o valor." : "Sem internet para ler a nota agora. Digite o valor; a foto fica guardada."; }
     };
@@ -2292,7 +2320,7 @@ function handleCommand(raw, alts) {
   if (has("fechado")) return quickFail("Local fechado");
   if (/\b(entregue|entreguei|entregado|feito|finalizado|concluido|pronto)\b/.test(t)) {
     if (!s) return speak("Não há entrega pendente.");
-    s.status = "delivered"; s.recv = "Confirmado por voz"; s.doneAt = Date.now(); stampWhere(s); save(); renderAll(false); beep();
+    s.status = "delivered"; s.recv = "Confirmado por voz"; s.doneAt = Date.now(); stampWhere(s); save(); renderAll(false); beep(); avancarNav(s);
     return sayNext("Entrega registrada. ");
   }
   if (has("pular", "pula", "depois")) { if (!s) return speak("Não há entrega pendente."); st.stops.splice(st.stops.indexOf(s), 1); st.stops.push(s); save(); renderAll(false); return sayNext("Pulei. "); }
@@ -2549,8 +2577,24 @@ function renderPeriod() {
     <div><b>${p.done}</b><span>entregas</span></div><div><b>${km1(p.km)}</b><span>km</span></div><div><b>R$ ${fmt(p.earn)}</b><span>ganho</span></div>
     <div class="fuel"><b>R$ ${fmt(p.fuel)}</b><span>gasolina</span></div><div class="fuel"><b>R$ ${fmt(p.wear + p.fixed)}</b><span>desgaste e fixos</span></div><div><b>R$ ${fmt(p.km ? p.cost / p.km : 0)}</b><span>custo por km</span></div>
     <div class="net"><b>R$ ${fmt(p.net)}</b><span>lucro real (ganho − todos os custos) · R$ ${fmt(p.days ? p.net / p.days : 0)} por dia${p.hours ? " · R$ " + fmt(p.net / p.hours) + " por hora" : ""}</span></div></div>`;
-  renderPlatCompare(p); renderCharts(p);
+  renderPlatCompare(p); renderGastosPeriodo(p); renderCharts(p);
   return p;
+}
+/* lista dos gastos do período escolhido, agrupados por dia (a notinha de qualquer dia aparece aqui) */
+function renderGastosPeriodo(p) {
+  const box = $("#gastosPeriodoBox"); if (!box) return;
+  const gl = (p.gastos || []).slice().sort((a, b) => a.iso < b.iso ? 1 : a.iso > b.iso ? -1 : (b.id < a.id ? -1 : 1));
+  const tot = totalGastos(gl);
+  if (!gl.length) { box.innerHTML = `<h3 class="sub-h">Gastos do período</h3><p class="sub">Nenhum gasto lançado em ${esc(p.r.label)}. Lance pela aba Rota (📷 Notinha) ou no botão + Gasto.</p>`; return; }
+  const dias = {}; gl.forEach(g => (dias[g.iso] = dias[g.iso] || []).push(g));
+  const ordemDias = Object.keys(dias).sort((a, b) => a < b ? 1 : -1);
+  box.innerHTML = `<h3 class="sub-h">Gastos do período · R$ ${fmt(tot)}</h3>
+    <div class="gper">${ordemDias.map(iso => {
+      const lista = dias[iso], sub = totalGastos(lista);
+      return `<div class="gper-dia"><div class="gper-h"><b>${esc(brOf(iso))}</b><span>R$ ${fmt(sub)} em ${lista.length} lançamento${lista.length > 1 ? "s" : ""}</span></div>
+        ${lista.map(g => `<button class="gasto-row" data-gasto="${g.id}"><span class="gico">${catIco(g.cat)}</span><span class="gtx"><b>${esc(catNome(g.cat))}${g.desc ? " · " + esc(g.desc) : ""}</b><em>${g.pag ? esc(g.pag) : ""}${g.temFoto ? (g.pag ? " · " : "") + "com nota" : ""}</em></span><b class="gval">R$ ${fmt(g.valor)}</b></button>`).join("")}</div>`;
+    }).join("")}</div>
+    <p class="hint">Mostra os gastos de <b>${esc(p.r.label)}</b>. Toque num gasto para ver a nota ou mudar o dia.</p>`;
 }
 async function periodFile(p) {
   const resumo = p.list.map(d => ({ Data: brOf(d.iso), "Dia da semana": new Date(d.iso + "T12:00").toLocaleDateString("pt-BR", { weekday: "long" }), Entregas: d.done, "Com problema": d.fail, Pacotes: d.pk, Km: +d.km.toFixed(1), "Ganho (R$)": +d.earn.toFixed(2), "Gasolina (R$)": +fuelOf(d.km).toFixed(2), "Desgaste+fixos (R$)": +(costsOf(d.km, 1).wear + costsOf(d.km, 1).fixed).toFixed(2), "Lucro (R$)": +(d.earn - costsOf(d.km, 1).total).toFixed(2) }));
