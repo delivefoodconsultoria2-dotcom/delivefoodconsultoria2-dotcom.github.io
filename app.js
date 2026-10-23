@@ -46,7 +46,7 @@ async function dbDel(store, key) { try { const d = await idb(); await new Promis
 
 /* ===================== estado ===================== */
 const DEFAULTS = {
-  gastos: [], ganhos: [], reserva: { mov: [] }, veiculoContas: [], agenda: [], planejadas: [], rotaNome: "", rotaData: "",
+  gastos: [], ganhos: [], reserva: { mov: [] }, veiculoContas: [], das: {}, dasn: {}, agenda: [], planejadas: [], rotaNome: "", rotaData: "",
   stops: [], start: null, history: [], filter: "all",
   settings: { city: "Belo Horizonte - MG", rate: 3.5, vehicle: "moto", stopMin: 1, nav: "google", roundTrip: false, theme: "system",
     speak: true, kml: 0, fuelPrice: 6.19, autoRep: "none", repWa: "", repMail: "", msg: "Olá {nome}! Sou o entregador do seu pedido e chego em cerca de {min} minutos." }
@@ -2153,6 +2153,26 @@ function renderInteligencia() {
       <div class="inte-sem">${med.map((v, i) => `<div class="inte-d ${i === melhor ? "top" : ""}"><i style="height:${Math.max(4, v / max * 60)}px"></i><span>${DIAS_SEM[i].slice(0, 3)}</span><em>${v ? "R$ " + Math.round(v) : "—"}</em></div>`).join("")}</div>`
       : `<p class="sub" style="margin:2px 0 0">Depois de alguns dias trabalhando, aqui aparece seu melhor dia da semana e a média de cada dia. Use a calculadora pra decidir se vale pegar uma rota.</p>`}`;
 }
+/* ===================== impostos do MEI (DAS mensal, DASN anual) e relatório pro contador ===================== */
+const ymAtual = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); };
+function dasSheet() {
+  sheet(`<h3>DAS mensal do MEI</h3><p class="sub">É a guia que o MEI paga todo mês (vence dia 20). Coloque o valor do seu DAS pra o app te lembrar.</p>
+    <div class="field"><label for="dsVal">Valor do DAS por mês (R$)</label><input id="dsVal" inputmode="decimal" placeholder="Ex.: 76,90" value="${st.settings.dasValor ? String(st.settings.dasValor).replace(".", ",") : ""}"></div>
+    <div class="row"><button class="btn ghost" data-close>Cancelar</button><button class="btn primary" id="dsOk">Salvar</button></div>`, () => {
+    $("#dsOk").addEventListener("click", () => { st.settings.dasValor = Math.max(0, dinheiro(($("#dsVal").value || "").trim()) || parseFloat(($("#dsVal").value || "").replace(",", ".")) || 0); save(); closeSheet(); renderResumo(); toast(st.settings.dasValor ? `DAS: R$ ${fmt(st.settings.dasValor)}/mês` : "DAS removido"); });
+  });
+}
+function renderImpostos() {
+  const box = $("#impostoBox"); if (!box) return;
+  const ym = ymAtual(), mes = new Date().getMonth(), y = new Date().getFullYear();
+  const das = st.settings.dasValor || 0, pago = !!(st.das && st.das[ym] && st.das[ym].pago);
+  const dasnPrazo = mes <= 4, dasnFeito = !!(st.dasn && st.dasn[y]);
+  box.innerHTML = `<div class="gh-head"><h3 class="sub-h" style="margin:0">Impostos (MEI) e contador</h3><button class="btn ghost sm" data-act="das">${das ? "Mudar DAS" : "Definir DAS"}</button></div>
+    <div class="imp2 ${pago ? "ok" : "pend"}"><div class="imp2-t"><b>DAS de ${MESES[mes]}</b><span>${das ? "R$ " + fmt(das) + " · vence dia 20" : "Defina o valor do seu DAS mensal"}</span></div>${das ? `<button class="btn ${pago ? "ghost" : "primary"} sm" data-act="dasPago">${pago ? "Pago ✓" : "Marcar pago"}</button>` : ""}</div>
+    ${dasnPrazo && !dasnFeito ? `<div class="imp2 pend"><div class="imp2-t"><b>Declaração anual (DASN-SIMEI) ${y}</b><span>Vence 31/05 — informa o faturamento do ano passado</span></div><button class="btn ghost sm" data-act="dasnFeito">Já declarei</button></div>` : ""}
+    <button class="btn ghost" data-act="relContador" style="width:100%;margin-top:8px">📄 Relatório anual pro contador (Excel)</button>
+    <p class="hint">O DAS é a guia mensal do MEI (pague até o dia 20). A DASN é a declaração que o MEI faz uma vez por ano. O relatório junta ganhos, km e custos de cada mês pro seu contador.</p>`;
+}
 /* ===================== veículo: consumo real + contas anuais (seguro, IPVA, licenciamento) com reserva mensal ===================== */
 const VEIC_NOMES = ["Seguro", "IPVA", "Licenciamento", "Revisão", "Troca de óleo", "Pneu novo", "Outro"];
 function veiculoContas() { return (st.veiculoContas || []); }
@@ -2832,7 +2852,7 @@ function renderPeriod() {
     <div><b>${p.done}</b><span>entregas</span></div><div><b>${km1(p.km)}</b><span>km</span></div><div><b>R$ ${fmt(p.earn)}</b><span>ganho</span></div>
     <div class="fuel"><b>R$ ${fmt(p.fuel)}</b><span>gasolina</span></div><div class="fuel"><b>R$ ${fmt(p.wear + p.fixed)}</b><span>desgaste e fixos</span></div><div><b>R$ ${fmt(p.km ? p.cost / p.km : 0)}</b><span>custo por km</span></div>
     <div class="net"><b>R$ ${fmt(p.net)}</b><span>lucro real (ganho − todos os custos) · R$ ${fmt(p.days ? p.net / p.days : 0)} por dia${p.hours ? " · R$ " + fmt(p.net / p.hours) + " por hora" : ""}</span></div></div>`;
-  renderMetas(); renderRepasse(); renderReserva(); renderGanhos(p); renderPlatCompare(p); renderGastosPeriodo(p); renderInteligencia(); renderVeiculo(); renderCharts(p);
+  renderMetas(); renderRepasse(); renderReserva(); renderGanhos(p); renderPlatCompare(p); renderGastosPeriodo(p); renderInteligencia(); renderVeiculo(); renderImpostos(); renderCharts(p);
   return p;
 }
 /* lista dos gastos do período escolhido, agrupados por dia (a notinha de qualquer dia aparece aqui) */
@@ -3472,6 +3492,10 @@ document.addEventListener("click", e => {
   if (d.act === "financeiro") { go("resumo"); if (perKind !== "month") { perKind = "month"; grpKind = "day"; } renderResumo(); }
   if (d.act === "metaMes") metaMesSheet();
   if (d.act === "rotaCompensa") rotaCompensaSheet();
+  if (d.act === "das") dasSheet();
+  if (d.act === "dasPago") { const ym = ymAtual(); st.das = st.das || {}; st.das[ym] = { pago: !(st.das[ym] && st.das[ym].pago) }; save(); renderImpostos(); toast(st.das[ym].pago ? "DAS marcado como pago" : "DAS voltou a pendente"); }
+  if (d.act === "dasnFeito") { const y = new Date().getFullYear(); st.dasn = st.dasn || {}; st.dasn[y] = true; save(); renderImpostos(); toast("Declaração anual marcada como feita"); }
+  if (d.act === "relContador") yearTaxReport();
   if (d.act === "veiculoConta") veiculoContaSheet();
   if (d.veiculo) veiculoContaSheet(veiculoContas().find(c => c.id === d.veiculo));
   if (d.navset) { st.settings.nav = d.navset; st.navAsked = Date.now(); st.navV2 = 1; save(); renderNext(); toast("Navegação pelo " + ({ waze: "Waze", app: "DeliveRota" }[d.navset] || "Google Maps")); if (d.navset === "app" && rotaComecou() && !NV.on) iniciarNavApp(); }
