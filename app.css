@@ -639,6 +639,13 @@ body.navon #toast{top:auto!important;bottom:calc(170px + env(safe-area-inset-bot
 /* cabeçalho do bloco de ganhos (título + botão lançar) */
 .gh-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px}
 .gh-head .btn.sm{min-height:38px;padding:0 12px;cursor:pointer}
+/* fileira de botões de configuração no topo do Controle Financeiro */
+.cfg-chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 8px;margin-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.cfg-chips::-webkit-scrollbar{display:none}
+.cfg-chips button{flex:none;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:8px 14px;font:inherit;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
+.cfg-chips button span{font-size:15px}
+.cfg-chips button:hover{border-color:var(--green-strong);color:var(--green-strong)}
+@media (min-width:900px){body[data-tab="resumo"] .cfg-chips{flex-wrap:wrap;overflow:visible}}
 /* impostos MEI */
 .imp2{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin:6px 0}
 .imp2.pend{border-color:var(--amber);background:var(--amber-soft)}

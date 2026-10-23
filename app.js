@@ -1121,7 +1121,7 @@ async function stopSheet(s) {
 }
 let deferredInstall = null;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredInstall = e; });
-function settingsSheet() {
+function settingsSheet(scrollTo) {
   const S = st.settings; const rates = S.platRates || {};
   sheet(`<h3>Configurações</h3>
     <div class="acct"><span class="av">${esc((user.name || user.email || "?").charAt(0).toUpperCase())}</span><div><b>${esc(user.name || "")}</b><span>${esc(user.email)}</span></div></div>
@@ -1137,13 +1137,13 @@ function settingsSheet() {
       <div class="field"><label for="cfNav">App de navegação</label><select id="cfNav"><option value="waze" ${S.nav === "waze" ? "selected" : ""}>Waze</option><option value="google" ${S.nav === "google" ? "selected" : ""}>Google Maps</option></select></div></div>
     <label class="check"><input type="checkbox" id="cfSpeak" ${S.speak ? "checked" : ""}> O app fala a próxima entrega em voz alta</label>
 
-    <h4 class="cfg-h">Ganhos e meta</h4>
+    <h4 class="cfg-h" id="cfg-ganhos">Ganhos e meta</h4>
     <div class="grid2"><div class="field"><label for="cfRate">Ganho por pacote (padrão, R$)</label><input id="cfRate" type="number" step="0.1" min="0" value="${S.rate}"></div>
       <div class="field"><label for="cfGoal">Meta por dia (R$)</label><input id="cfGoal" type="number" step="10" min="0" value="${S.goal || ""}" placeholder="Ex.: 200"></div></div>
     <div class="field"><label>Ganho por pacote em cada plataforma (deixe vazio para usar o padrão)</label>
       <div class="grid2">${PLATS.map((pl, i) => `<input id="cfPl${i}" type="number" step="0.1" min="0" placeholder="${esc(pl)}" aria-label="${esc(pl)}" value="${rates[pl] || ""}">`).join("")}</div></div>
 
-    <h4 class="cfg-h">Veículo e custos</h4>
+    <h4 class="cfg-h" id="cfg-veiculo">Veículo e custos</h4>
     <div class="grid2"><div class="field"><label for="cfVeh">Veículo</label><select id="cfVeh">${Object.keys(VEHICLE_LABEL).map(k => `<option value="${k}" ${S.vehicle === k ? "selected" : ""}>${VEHICLE_LABEL[k]}</option>`).join("")}</select></div>
       <div class="field"><label for="cfKml">Consumo (km por litro)</label><input id="cfKml" type="number" step="0.5" min="0" value="${S.kml || KML_DEFAULT[S.vehicle]}"></div></div>
     <div class="grid2"><div class="field"><label for="cfFuel">Preço da gasolina (R$/litro)</label><input id="cfFuel" type="number" step="0.01" min="0" value="${S.fuelPrice}"></div>
@@ -1151,7 +1151,7 @@ function settingsSheet() {
     <div class="grid2"><div class="field"><label for="cfFixed">Custos fixos por mês (parcela, seguro, celular)</label><input id="cfFixed" type="number" step="10" min="0" value="${S.fixedMonth || ""}" placeholder="R$"></div>
       <div class="field"><label for="cfWd">Dias trabalhados por mês</label><input id="cfWd" type="number" min="1" max="31" value="${S.workDays || 26}"></div></div>
 
-    <h4 class="cfg-h">Relatórios</h4>
+    <h4 class="cfg-h" id="cfg-relatorios">Relatórios</h4>
     <div class="field"><label for="cfAuto">Relatório automático</label><select id="cfAuto">${[["none", "Não enviar"], ["day", "Todo dia"], ["week", "Toda semana (segunda-feira)"], ["month", "Todo mês (dia 1º)"]].map(o => `<option value="${o[0]}" ${S.autoRep === o[0] ? "selected" : ""}>${o[1]}</option>`).join("")}</select>
       <span class="hint">Quando chegar a hora, o app avisa e o relatório sai com um toque.</span></div>
     <div class="grid2"><div class="field"><label for="cfRepWa">WhatsApp para o relatório</label><input id="cfRepWa" inputmode="tel" placeholder="(31) 99999-0000" value="${esc(S.repWa)}"></div>
@@ -1175,6 +1175,7 @@ function settingsSheet() {
       <button class="btn warn" id="cfClear">Apagar todas as paradas</button>
       <button class="btn primary big" id="cfSave">Salvar</button>
     </div>`, () => {
+    if (scrollTo) { const el = document.getElementById(scrollTo); if (el) setTimeout(() => el.scrollIntoView({ block: "start", behavior: "smooth" }), 60); }
     $("#cfPass").addEventListener("click", () => { closeSheet(); changePassword(); });
     $("#cfHelp").addEventListener("click", () => { closeSheet(); helpSheet2(); });
     const adm = $("#cfAdmin"); if (adm) adm.addEventListener("click", () => { closeSheet(); adminSheet(); });
@@ -3493,6 +3494,10 @@ document.addEventListener("click", e => {
   if (d.act === "metaMes") metaMesSheet();
   if (d.act === "rotaCompensa") rotaCompensaSheet();
   if (d.act === "das") dasSheet();
+  if (d.act === "cfgVeiculo") settingsSheet("cfg-veiculo");
+  if (d.act === "cfgGanhos") settingsSheet("cfg-ganhos");
+  if (d.act === "cfgRelatorios") settingsSheet("cfg-relatorios");
+  if (d.act === "cfgTudo") settingsSheet();
   if (d.act === "dasPago") { const ym = ymAtual(); st.das = st.das || {}; st.das[ym] = { pago: !(st.das[ym] && st.das[ym].pago) }; save(); renderImpostos(); toast(st.das[ym].pago ? "DAS marcado como pago" : "DAS voltou a pendente"); }
   if (d.act === "dasnFeito") { const y = new Date().getFullYear(); st.dasn = st.dasn || {}; st.dasn[y] = true; save(); renderImpostos(); toast("Declaração anual marcada como feita"); }
   if (d.act === "relContador") yearTaxReport();
