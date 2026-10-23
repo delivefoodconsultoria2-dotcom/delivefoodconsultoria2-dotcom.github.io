@@ -639,6 +639,14 @@ body.navon #toast{top:auto!important;bottom:calc(170px + env(safe-area-inset-bot
 /* cabeçalho do bloco de ganhos (título + botão lançar) */
 .gh-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px}
 .gh-head .btn.sm{min-height:38px;padding:0 12px;cursor:pointer}
+/* veículo: consumo e contas */
+.veic-cons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0}
+.veic-cons>div{border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.veic-cons span{display:block;font-size:12px;color:var(--muted);font-weight:700}
+.veic-cons b{font-family:var(--display);font-size:18px}
+.veic-alerta{font-size:13px;font-weight:700;color:var(--red);background:var(--red-soft);border-radius:10px;padding:8px 10px;margin:6px 0}
+.veic-contas{margin-top:6px}
+.veic-res{font-size:13px;margin:8px 0 0}
 /* comparativo mês a mês */
 .comp{display:inline-block;font-size:12px;font-weight:800;padding:1px 8px;border-radius:99px;margin-left:4px}
 .comp.up{background:var(--green-soft);color:var(--green-strong)}

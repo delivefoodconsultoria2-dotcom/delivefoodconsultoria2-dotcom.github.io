@@ -46,7 +46,7 @@ async function dbDel(store, key) { try { const d = await idb(); await new Promis
 
 /* ===================== estado ===================== */
 const DEFAULTS = {
-  gastos: [], ganhos: [], reserva: { mov: [] }, agenda: [], planejadas: [], rotaNome: "", rotaData: "",
+  gastos: [], ganhos: [], reserva: { mov: [] }, veiculoContas: [], agenda: [], planejadas: [], rotaNome: "", rotaData: "",
   stops: [], start: null, history: [], filter: "all",
   settings: { city: "Belo Horizonte - MG", rate: 3.5, vehicle: "moto", stopMin: 1, nav: "google", roundTrip: false, theme: "system",
     speak: true, kml: 0, fuelPrice: 6.19, autoRep: "none", repWa: "", repMail: "", msg: "Olá {nome}! Sou o entregador do seu pedido e chego em cerca de {min} minutos." }
@@ -2091,6 +2091,59 @@ function renderReserva() {
     ${cofres.length ? `<div class="rv-cofres">${cofres.map(o => `<div class="rv-cof"><span>${esc(o.c)}</span><b>R$ ${fmt(o.v)}</b></div>`).join("")}</div>`
       : `<p class="sub" style="margin:8px 0 0">Separe um pouco de cada rota pra não faltar depois: emergência, INSS, 13º e férias (você não tem patrão guardando pra você).</p>`}</div>`;
 }
+/* ===================== veículo: consumo real + contas anuais (seguro, IPVA, licenciamento) com reserva mensal ===================== */
+const VEIC_NOMES = ["Seguro", "IPVA", "Licenciamento", "Revisão", "Troca de óleo", "Pneu novo", "Outro"];
+function veiculoContas() { return (st.veiculoContas || []); }
+function consumoReal() {
+  const pm = periodData(rangeOf("month", new Date()));
+  const fuelR = (st.gastos || []).filter(g => g.cat === "combustivel" && g.iso >= pm.r.from && g.iso <= pm.r.to).reduce((a, g) => a + (+g.valor || 0), 0);
+  const litros = st.settings.fuelPrice > 0 ? fuelR / st.settings.fuelPrice : 0;
+  return { real: litros > 0 ? pm.km / litros : 0, litros, km: pm.km, fuelR };
+}
+function veiculoContaSheet(c0) {
+  const novo = !c0; const c = c0 ? { ...c0 } : { id: uid(), nome: "", valor: "", data: "" };
+  sheet(`<div class="sec-h"><h3>${novo ? "Conta do veículo" : "Editar conta"}</h3></div>
+    <p class="sub">Seguro, IPVA, licenciamento... o app mostra quanto guardar por mês pra não ser pego de surpresa.</p>
+    <div class="field"><label>O que é</label><div class="gcats" id="vcNome">${VEIC_NOMES.map(n => `<button type="button" data-vn="${esc(n)}" aria-pressed="${c.nome === n}">${esc(n)}</button>`).join("")}</div></div>
+    <div class="grid2">
+      <div class="field"><label for="vcVal">Valor (R$)</label><input id="vcVal" inputmode="decimal" placeholder="0,00" value="${c.valor !== "" ? String(c.valor).replace(".", ",") : ""}"></div>
+      <div class="field"><label for="vcData">Vence em</label><input id="vcData" type="date" value="${c.data || ""}"></div>
+    </div>
+    <div class="row">${novo ? `<button class="btn ghost" data-close>Cancelar</button>` : `<button class="btn warn" id="vcDel">Apagar</button>`}<button class="btn primary" id="vcOk">Salvar</button></div>`, () => {
+    $$("#vcNome button").forEach(b => b.addEventListener("click", () => { $$("#vcNome button").forEach(x => x.setAttribute("aria-pressed", x === b)); c.nome = b.dataset.vn; }));
+    $("#vcOk").addEventListener("click", () => {
+      const v = dinheiro(($("#vcVal").value || "").trim()) || parseFloat(($("#vcVal").value || "").replace(",", "."));
+      if (!(v > 0)) { toast("Coloque o valor"); $("#vcVal").focus(); return; }
+      c.valor = Math.round(v * 100) / 100; c.data = $("#vcData").value || ""; c.nome = c.nome || "Outro";
+      st.veiculoContas = st.veiculoContas || []; const i = st.veiculoContas.findIndex(x => x.id === c.id); if (i >= 0) st.veiculoContas[i] = c; else st.veiculoContas.push(c);
+      save(); closeSheet(); renderResumo(); toast(`Conta salva: ${c.nome} · R$ ${fmt(c.valor)}`);
+    });
+    const del = $("#vcDel"); if (del) del.addEventListener("click", e => twoTap(e.currentTarget, "Toque de novo para apagar", () => { st.veiculoContas = veiculoContas().filter(x => x.id !== c.id); save(); closeSheet(); renderResumo(); toast("Conta apagada"); }));
+  });
+}
+function renderVeiculo() {
+  const box = $("#veiculoBox"); if (!box) return;
+  if (st.settings.vehicle === "pe") { box.innerHTML = ""; return; }
+  const cr = consumoReal();
+  const cfg = kml();
+  const pior = cfg > 0 && cr.real > 0 && cr.real < cfg * 0.85;
+  const hoje = isoOf(new Date());
+  const contas = veiculoContas().map(c => {
+    const dias = c.data ? Math.round((new Date(c.data + "T12:00") - new Date(hoje + "T12:00")) / 864e5) : null;
+    const meses = dias != null ? Math.max(1, Math.ceil(dias / 30)) : 12;
+    return { ...c, dias, mes: c.valor / meses };
+  }).sort((a, b) => (a.dias == null ? 1e9 : a.dias) - (b.dias == null ? 1e9 : b.dias));
+  const reservaMes = contas.reduce((a, c) => a + (c.dias == null || c.dias >= 0 ? c.mes : 0), 0);
+  box.innerHTML = `<div class="gh-head"><h3 class="sub-h" style="margin:0">Veículo: consumo e contas</h3><button class="btn primary sm" data-act="veiculoConta">+ Conta</button></div>
+    <div class="veic-cons">
+      <div><span>Consumo real (este mês)</span><b>${cr.real > 0 ? km1(cr.real) + " km/l" : "—"}</b></div>
+      <div><span>Configurado</span><b>${cfg > 0 ? km1(cfg) + " km/l" : "—"}</b></div>
+    </div>
+    ${pior ? `<p class="veic-alerta">⚠ Seu consumo real está pior que o configurado. Pode ser pneu murcho, falta de revisão ou o ajuste de km/l desatualizado.</p>` : cr.real > 0 ? `<p class="hint">Calculado pelas notas de combustível do mês ÷ preço do litro, sobre os km rodados.</p>` : `<p class="hint">Lance as notas de combustível (📷) e o app calcula seu consumo real.</p>`}
+    ${contas.length ? `<div class="veic-contas">${contas.map(c => `<button class="gasto-row" data-veiculo="${c.id}"><span class="gico">🚗</span><span class="gtx"><b>${esc(c.nome)}</b><em>${c.data ? (c.dias >= 0 ? `vence em ${c.dias} dia${c.dias !== 1 ? "s" : ""} (${esc(brOf(c.data))})` : `venceu há ${-c.dias} dia${c.dias !== -1 ? "s" : ""}`) : "sem data"} · guarde R$ ${fmt(c.mes)}/mês</em></span><b class="gval">R$ ${fmt(c.valor)}</b></button>`).join("")}</div>
+      <p class="veic-res">Pra dar conta de tudo, separe <b>R$ ${fmt(reservaMes)}/mês</b> (dá pra usar o cofrinho "Troca de veículo" na Reserva).</p>`
+      : `<p class="sub" style="margin:8px 0 0">Cadastre seguro, IPVA e licenciamento com a data: o app mostra quanto guardar por mês pra não faltar quando vencer.</p>`}`;
+}
 /* ===================== barra rápida, rotas com nome/data, paradas anteriores, compartilhar e manifesto ===================== */
 const AG_MAX = 400;
 function guardarNaAgenda(lista) {
@@ -2717,7 +2770,7 @@ function renderPeriod() {
     <div><b>${p.done}</b><span>entregas</span></div><div><b>${km1(p.km)}</b><span>km</span></div><div><b>R$ ${fmt(p.earn)}</b><span>ganho</span></div>
     <div class="fuel"><b>R$ ${fmt(p.fuel)}</b><span>gasolina</span></div><div class="fuel"><b>R$ ${fmt(p.wear + p.fixed)}</b><span>desgaste e fixos</span></div><div><b>R$ ${fmt(p.km ? p.cost / p.km : 0)}</b><span>custo por km</span></div>
     <div class="net"><b>R$ ${fmt(p.net)}</b><span>lucro real (ganho − todos os custos) · R$ ${fmt(p.days ? p.net / p.days : 0)} por dia${p.hours ? " · R$ " + fmt(p.net / p.hours) + " por hora" : ""}</span></div></div>`;
-  renderMetas(); renderReserva(); renderGanhos(p); renderPlatCompare(p); renderGastosPeriodo(p); renderCharts(p);
+  renderMetas(); renderReserva(); renderGanhos(p); renderPlatCompare(p); renderGastosPeriodo(p); renderVeiculo(); renderCharts(p);
   return p;
 }
 /* lista dos gastos do período escolhido, agrupados por dia (a notinha de qualquer dia aparece aqui) */
@@ -3356,6 +3409,8 @@ document.addEventListener("click", e => {
   if (d.act === "reservaRetirar") reservaSheet(-1);
   if (d.act === "financeiro") { go("resumo"); if (perKind !== "month") { perKind = "month"; grpKind = "day"; } renderResumo(); }
   if (d.act === "metaMes") metaMesSheet();
+  if (d.act === "veiculoConta") veiculoContaSheet();
+  if (d.veiculo) veiculoContaSheet(veiculoContas().find(c => c.id === d.veiculo));
   if (d.navset) { st.settings.nav = d.navset; st.navAsked = Date.now(); st.navV2 = 1; save(); renderNext(); toast("Navegação pelo " + ({ waze: "Waze", app: "DeliveRota" }[d.navset] || "Google Maps")); if (d.navset === "app" && rotaComecou() && !NV.on) iniciarNavApp(); }
   if (d.act === "navapp") { if (NV.on) { NV.solto = false; if (NV.eu && map) map.setView([NV.eu.lat, NV.eu.lng], 18); } else iniciarNavApp(); }
   if (d.junto) { const x = byId(d.junto), a = pending()[0]; if (x && a) { st.stops.splice(st.stops.indexOf(x), 1); st.stops.splice(st.stops.indexOf(a) + 1, 0, x); save(); renderAll(false); toast("Parada " + stopNumber(x) + " vem logo depois desta"); } }
