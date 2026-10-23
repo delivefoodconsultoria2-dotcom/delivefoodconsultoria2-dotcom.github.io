@@ -2109,6 +2109,50 @@ function renderReserva() {
     ${cofres.length ? `<div class="rv-cofres">${cofres.map(o => `<div class="rv-cof"><span>${esc(o.c)}</span><b>R$ ${fmt(o.v)}</b></div>`).join("")}</div>`
       : `<p class="sub" style="margin:8px 0 0">Separe um pouco de cada rota pra não faltar depois: emergência, INSS, 13º e férias (você não tem patrão guardando pra você).</p>`}</div>`;
 }
+/* ===================== inteligência: melhor dia da semana e "essa rota compensa?" ===================== */
+const DIAS_SEM = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+function rotaCompensaSheet() {
+  sheet(`<h3>Essa rota compensa?</h3><p class="sub">Antes de aceitar: coloque o valor, os km e quanto tempo vai levar. O app diz se vale a pena.</p>
+    <div class="grid2">
+      <div class="field"><label for="rcVal">Valor da rota (R$)</label><input id="rcVal" inputmode="decimal" placeholder="0,00"></div>
+      <div class="field"><label for="rcKm">Km da rota</label><input id="rcKm" type="number" step="0.1" min="0" placeholder="0"></div>
+    </div>
+    <div class="field"><label for="rcH">Tempo (horas)</label><input id="rcH" type="number" step="0.5" min="0" placeholder="Ex.: 3"></div>
+    <div id="rcOut" class="rc-out" hidden></div>
+    <div class="row"><button class="btn ghost" data-close>Fechar</button><button class="btn primary" id="rcCalc">Calcular</button></div>`, () => {
+    $("#rcCalc").addEventListener("click", () => {
+      const v = dinheiro(($("#rcVal").value || "").trim()) || parseFloat(($("#rcVal").value || "").replace(",", ".")) || 0;
+      const km = Math.max(0, parseFloat($("#rcKm").value) || 0), h = Math.max(0, parseFloat($("#rcH").value) || 0);
+      if (!(v > 0) || !(km > 0)) { toast("Coloque pelo menos o valor e os km"); return; }
+      const custoVar = fuelOf(km) + km * otherKm();
+      const custoFixoRota = h > 0 ? fixedDay() * (h / 8) : 0; // parte dos custos fixos proporcional ao tempo
+      const lucro = v - custoVar - custoFixoRota;
+      const porKm = v / km, lucroKm = lucro / km, porH = h > 0 ? lucro / h : null;
+      const bom = lucroKm >= otherKm() + fuelOf(1) ? true : lucroKm > 0;
+      $("#rcOut").hidden = false;
+      $("#rcOut").innerHTML = `<div class="rc-verdict ${lucro > 0 ? (porH != null && porH < 8 ? "mid" : "ok") : "bad"}">${lucro > 0 ? (porH != null && porH < 8 ? "⚠ Compensa pouco" : "✓ Compensa") : "✗ Não compensa"}</div>
+        <div class="rc-grid"><div><span>Lucro estimado</span><b>R$ ${fmt(lucro)}</b></div>
+          <div><span>R$ por km</span><b>R$ ${fmt(porKm)}</b></div>
+          <div><span>Lucro por km</span><b>R$ ${fmt(lucroKm)}</b></div>
+          ${porH != null ? `<div><span>Lucro por hora</span><b>R$ ${fmt(porH)}</b></div>` : ""}</div>
+        <p class="hint">Já descontei gasolina e desgaste${h > 0 ? " e uma parte dos custos fixos" : ""}. Compare o lucro por hora com o que você quer ganhar.</p>`;
+    });
+  });
+}
+function renderInteligencia() {
+  const box = $("#inteBox"); if (!box) return;
+  const days = Object.values(dayTotals()).filter(d => d.earn > 0);
+  const soma = [0, 0, 0, 0, 0, 0, 0], cnt = [0, 0, 0, 0, 0, 0, 0];
+  days.forEach(d => { const w = new Date(d.iso + "T12:00").getDay(); soma[w] += d.earn; cnt[w]++; });
+  const med = soma.map((s, i) => cnt[i] ? s / cnt[i] : 0);
+  const max = Math.max(1, ...med);
+  const melhor = med.indexOf(Math.max(...med));
+  const temDados = days.length >= 3 && med.some(v => v > 0);
+  box.innerHTML = `<div class="gh-head"><h3 class="sub-h" style="margin:0">Inteligência pra ganhar mais</h3><button class="btn primary sm" data-act="rotaCompensa">Essa rota compensa?</button></div>
+    ${temDados ? `<p class="sub" style="margin:2px 0 6px">Seu melhor dia costuma ser <b>${DIAS_SEM[melhor]}</b> (média R$ ${fmt(med[melhor])}).</p>
+      <div class="inte-sem">${med.map((v, i) => `<div class="inte-d ${i === melhor ? "top" : ""}"><i style="height:${Math.max(4, v / max * 60)}px"></i><span>${DIAS_SEM[i].slice(0, 3)}</span><em>${v ? "R$ " + Math.round(v) : "—"}</em></div>`).join("")}</div>`
+      : `<p class="sub" style="margin:2px 0 0">Depois de alguns dias trabalhando, aqui aparece seu melhor dia da semana e a média de cada dia. Use a calculadora pra decidir se vale pegar uma rota.</p>`}`;
+}
 /* ===================== veículo: consumo real + contas anuais (seguro, IPVA, licenciamento) com reserva mensal ===================== */
 const VEIC_NOMES = ["Seguro", "IPVA", "Licenciamento", "Revisão", "Troca de óleo", "Pneu novo", "Outro"];
 function veiculoContas() { return (st.veiculoContas || []); }
@@ -2788,7 +2832,7 @@ function renderPeriod() {
     <div><b>${p.done}</b><span>entregas</span></div><div><b>${km1(p.km)}</b><span>km</span></div><div><b>R$ ${fmt(p.earn)}</b><span>ganho</span></div>
     <div class="fuel"><b>R$ ${fmt(p.fuel)}</b><span>gasolina</span></div><div class="fuel"><b>R$ ${fmt(p.wear + p.fixed)}</b><span>desgaste e fixos</span></div><div><b>R$ ${fmt(p.km ? p.cost / p.km : 0)}</b><span>custo por km</span></div>
     <div class="net"><b>R$ ${fmt(p.net)}</b><span>lucro real (ganho − todos os custos) · R$ ${fmt(p.days ? p.net / p.days : 0)} por dia${p.hours ? " · R$ " + fmt(p.net / p.hours) + " por hora" : ""}</span></div></div>`;
-  renderMetas(); renderRepasse(); renderReserva(); renderGanhos(p); renderPlatCompare(p); renderGastosPeriodo(p); renderVeiculo(); renderCharts(p);
+  renderMetas(); renderRepasse(); renderReserva(); renderGanhos(p); renderPlatCompare(p); renderGastosPeriodo(p); renderInteligencia(); renderVeiculo(); renderCharts(p);
   return p;
 }
 /* lista dos gastos do período escolhido, agrupados por dia (a notinha de qualquer dia aparece aqui) */
@@ -3427,6 +3471,7 @@ document.addEventListener("click", e => {
   if (d.act === "reservaRetirar") reservaSheet(-1);
   if (d.act === "financeiro") { go("resumo"); if (perKind !== "month") { perKind = "month"; grpKind = "day"; } renderResumo(); }
   if (d.act === "metaMes") metaMesSheet();
+  if (d.act === "rotaCompensa") rotaCompensaSheet();
   if (d.act === "veiculoConta") veiculoContaSheet();
   if (d.veiculo) veiculoContaSheet(veiculoContas().find(c => c.id === d.veiculo));
   if (d.navset) { st.settings.nav = d.navset; st.navAsked = Date.now(); st.navV2 = 1; save(); renderNext(); toast("Navegação pelo " + ({ waze: "Waze", app: "DeliveRota" }[d.navset] || "Google Maps")); if (d.navset === "app" && rotaComecou() && !NV.on) iniciarNavApp(); }

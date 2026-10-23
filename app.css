@@ -639,6 +639,22 @@ body.navon #toast{top:auto!important;bottom:calc(170px + env(safe-area-inset-bot
 /* cabeçalho do bloco de ganhos (título + botão lançar) */
 .gh-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px}
 .gh-head .btn.sm{min-height:38px;padding:0 12px;cursor:pointer}
+/* inteligência: melhor dia + calculadora */
+.inte-sem{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;align-items:end;margin-top:6px}
+.inte-d{display:flex;flex-direction:column;align-items:center;gap:3px;justify-content:flex-end}
+.inte-d i{display:block;width:70%;max-width:26px;background:var(--surface-2);border-radius:5px 5px 0 0}
+.inte-d.top i{background:var(--green)}
+.inte-d span{font-size:11px;color:var(--muted);font-weight:700}
+.inte-d em{font-style:normal;font-size:10px;color:var(--muted)}
+.rc-out{margin:10px 0 2px}
+.rc-verdict{font-family:var(--display);font-size:18px;font-weight:800;padding:8px 12px;border-radius:12px;text-align:center}
+.rc-verdict.ok{background:var(--green-soft);color:var(--green-strong)}
+.rc-verdict.mid{background:var(--amber-soft);color:var(--ink)}
+.rc-verdict.bad{background:var(--red-soft);color:var(--red)}
+.rc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.rc-grid>div{border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.rc-grid span{display:block;font-size:12px;color:var(--muted);font-weight:700}
+.rc-grid b{font-family:var(--display);font-size:17px}
 /* veículo: consumo e contas */
 .veic-cons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0}
 .veic-cons>div{border:1px solid var(--line);border-radius:12px;padding:8px 10px}
