@@ -2014,6 +2014,45 @@ function renderGanhos(p) {
     ${gl.length ? `<div class="gper">${gl.map(g => `<button class="gasto-row" data-ganho="${g.id}"><span class="gico">💰</span><span class="gtx"><b>${esc(g.pl || "Sem plataforma")}${g.desc ? " · " + esc(g.desc) : ""}</b><em>${esc(brOf(g.iso))}${g.pk ? " · " + g.pk + " pac." : ""}${g.km ? " · " + km1(g.km) + " km" : ""}</em></span><b class="gval">R$ ${fmt(g.valor)}</b></button>`).join("")}</div>`
       : `<p class="sub">Lance quanto cada plataforma te pagou (Shopee, Mercado Livre…) com valor, km e pacotes. Aparece aqui e no dashboard “Qual plataforma paga melhor”.</p>`}`;
 }
+/* ===================== metas do mês, projeção e ponto de equilíbrio ===================== */
+function metaMesSheet() {
+  sheet(`<h3>Meta do mês</h3><p class="sub">Quanto você quer ganhar neste mês. O app mostra quanto falta e quanto precisa por dia pra bater.</p>
+    <div class="field"><label for="gmVal">Meta de ganho no mês (R$)</label><input id="gmVal" inputmode="decimal" placeholder="Ex.: 6000" value="${st.settings.goalMes ? String(st.settings.goalMes).replace(".", ",") : ""}"></div>
+    <div class="row"><button class="btn ghost" data-close>Cancelar</button><button class="btn primary" id="gmOk">Salvar meta</button></div>`, () => {
+    $("#gmOk").addEventListener("click", () => { st.settings.goalMes = Math.max(0, dinheiro(($("#gmVal").value || "").trim()) || parseFloat(($("#gmVal").value || "").replace(",", ".")) || 0); save(); closeSheet(); renderResumo(); toast(st.settings.goalMes ? `Meta do mês: R$ ${fmt(st.settings.goalMes)}` : "Meta removida"); });
+  });
+}
+function renderMetas() {
+  const box = $("#metaBox"); if (!box) return;
+  const hoje = new Date(), y = hoje.getFullYear(), mi = hoje.getMonth(), diaHoje = hoje.getDate();
+  const ndMes = new Date(y, mi + 1, 0).getDate();
+  const pm = periodData(rangeOf("month", new Date(y, mi, 15)));
+  const ganhoMes = pm.earn, lucroMes = pm.net;
+  const wd = Math.min(31, Math.max(1, st.settings.workDays || 26));
+  // dias de trabalho que ainda faltam no mês (proporcional aos dias úteis configurados)
+  const diasRestCal = Math.max(0, ndMes - diaHoje);
+  const diasTrabRest = Math.max(0, Math.round(diasRestCal * wd / ndMes));
+  // projeção: média por dia trabalhado × dias úteis do mês
+  const mediaDia = pm.days ? ganhoMes / pm.days : 0;
+  const projecao = pm.days ? mediaDia * wd : 0;
+  // ponto de equilíbrio do dia: custo fixo por dia + custo variável de um dia típico (média de km do mês)
+  const kmDiaMedio = pm.days ? pm.km / pm.days : 0;
+  const custoDia = fixedDay() + fuelOf(kmDiaMedio) + kmDiaMedio * otherKm();
+  const meta = st.settings.goalMes || 0;
+  const falta = Math.max(0, meta - ganhoMes), porDia = diasTrabRest ? falta / diasTrabRest : falta;
+  const pctMeta = meta ? Math.min(100, ganhoMes / meta * 100) : 0;
+  box.innerHTML = `<div class="meta-card">
+    <div class="meta-h"><h3 class="sub-h" style="margin:0">Meta e projeção do mês</h3><button class="btn ghost sm" data-act="metaMes">${meta ? "Mudar meta" : "Definir meta"}</button></div>
+    ${meta ? `<div class="meta-bar"><i style="width:${pctMeta}%"></i></div>
+      <p class="meta-l"><b>R$ ${fmt(ganhoMes)}</b> de R$ ${fmt(meta)} ${falta > 0 ? `· faltam <b>R$ ${fmt(falta)}</b>` : "· <b>meta batida! 🎉</b>"}${falta > 0 && diasTrabRest ? ` · ~R$ ${fmt(porDia)}/dia em ${diasTrabRest} dia${diasTrabRest > 1 ? "s" : ""}` : ""}</p>`
+      : `<p class="sub" style="margin:6px 0 2px">Defina uma meta de ganho pro mês e o app te mostra quanto falta e quanto precisa por dia.</p>`}
+    <div class="meta-grid">
+      <div><span>No ritmo atual, fecha o mês em</span><b>R$ ${fmt(projecao)}</b></div>
+      <div><span>Ponto de equilíbrio do dia</span><b>R$ ${fmt(custoDia)}</b></div>
+    </div>
+    <p class="hint">Ponto de equilíbrio = quanto você precisa ganhar num dia só pra cobrir os custos (gasolina, desgaste e a parte dos custos fixos daquele dia). Abaixo disso, o dia dá prejuízo.</p>
+  </div>`;
+}
 /* ===================== reserva e cofrinhos (o entregador guarda dinheiro: INSS, 13º, férias, emergência) ===================== */
 const COFRES = ["Emergência", "INSS / Aposentadoria", "13º próprio", "Férias próprias", "Troca de veículo", "Geral"];
 function reservaMov() { return (st.reserva && st.reserva.mov) || []; }
@@ -2678,7 +2717,7 @@ function renderPeriod() {
     <div><b>${p.done}</b><span>entregas</span></div><div><b>${km1(p.km)}</b><span>km</span></div><div><b>R$ ${fmt(p.earn)}</b><span>ganho</span></div>
     <div class="fuel"><b>R$ ${fmt(p.fuel)}</b><span>gasolina</span></div><div class="fuel"><b>R$ ${fmt(p.wear + p.fixed)}</b><span>desgaste e fixos</span></div><div><b>R$ ${fmt(p.km ? p.cost / p.km : 0)}</b><span>custo por km</span></div>
     <div class="net"><b>R$ ${fmt(p.net)}</b><span>lucro real (ganho − todos os custos) · R$ ${fmt(p.days ? p.net / p.days : 0)} por dia${p.hours ? " · R$ " + fmt(p.net / p.hours) + " por hora" : ""}</span></div></div>`;
-  renderReserva(); renderGanhos(p); renderPlatCompare(p); renderGastosPeriodo(p); renderCharts(p);
+  renderMetas(); renderReserva(); renderGanhos(p); renderPlatCompare(p); renderGastosPeriodo(p); renderCharts(p);
   return p;
 }
 /* lista dos gastos do período escolhido, agrupados por dia (a notinha de qualquer dia aparece aqui) */
@@ -3316,6 +3355,7 @@ document.addEventListener("click", e => {
   if (d.act === "reservaGuardar") reservaSheet(1);
   if (d.act === "reservaRetirar") reservaSheet(-1);
   if (d.act === "financeiro") { go("resumo"); if (perKind !== "month") { perKind = "month"; grpKind = "day"; } renderResumo(); }
+  if (d.act === "metaMes") metaMesSheet();
   if (d.navset) { st.settings.nav = d.navset; st.navAsked = Date.now(); st.navV2 = 1; save(); renderNext(); toast("Navegação pelo " + ({ waze: "Waze", app: "DeliveRota" }[d.navset] || "Google Maps")); if (d.navset === "app" && rotaComecou() && !NV.on) iniciarNavApp(); }
   if (d.act === "navapp") { if (NV.on) { NV.solto = false; if (NV.eu && map) map.setView([NV.eu.lat, NV.eu.lng], 18); } else iniciarNavApp(); }
   if (d.junto) { const x = byId(d.junto), a = pending()[0]; if (x && a) { st.stops.splice(st.stops.indexOf(x), 1); st.stops.splice(st.stops.indexOf(a) + 1, 0, x); save(); renderAll(false); toast("Parada " + stopNumber(x) + " vem logo depois desta"); } }
