@@ -1836,7 +1836,7 @@ function escolherParadaSheet(ops, frase) {
 /* ===================== gastos do dia (manual, foto da notinha ou arquivo) ===================== */
 const GASTO_CATS = [
   ["combustivel", "Combustível", "⛽"], ["alimentacao", "Alimentação", "🍽"], ["manutencao", "Manutenção", "🔧"],
-  ["estacionamento", "Estacionamento", "🅿"], ["pedagio", "Pedágio", "🛣"], ["lavagem", "Lavagem", "🧽"], ["celular", "Celular / internet", "📱"], ["outros", "Outros", "•"]];
+  ["estacionamento", "Estacionamento", "🅿"], ["pedagio", "Pedágio", "🛣"], ["lavagem", "Lavagem", "🧽"], ["celular", "Celular / internet", "📱"], ["desconto", "Desconto/perda da plataforma", "➖"], ["outros", "Outros", "•"]];
 const catNome = c => (GASTO_CATS.find(x => x[0] === c) || GASTO_CATS[GASTO_CATS.length - 1])[1];
 const catIco = c => (GASTO_CATS.find(x => x[0] === c) || GASTO_CATS[GASTO_CATS.length - 1])[2];
 const gastosDe = (de, ate) => (st.gastos || []).filter(g => g.iso >= de && g.iso <= (ate || de));
@@ -1992,13 +1992,20 @@ function ganhoSheet(g0) {
       <div class="field"><label for="gaKm">Km rodados</label><input id="gaKm" type="number" step="0.1" min="0" inputmode="decimal" value="${g.km !== "" ? g.km : ""}"></div>
     </div>
     <div class="field"><label for="gaDesc">Observação</label><input id="gaDesc" placeholder="Ex.: rota da manhã, região da Pampulha" value="${esc(g.desc || "")}"></div>
+    <div class="field"><label>Esse dinheiro</label><div class="gcats" id="gaRec">
+      <button type="button" data-rec="1" aria-pressed="${g.recebido !== false}">Já caiu na conta</button>
+      <button type="button" data-rec="0" aria-pressed="${g.recebido === false}">Ainda vou receber</button></div></div>
+    <div class="field" id="gaPrevWrap"${g.recebido === false ? "" : " hidden"}><label for="gaPrev">Previsão de pagamento</label><input id="gaPrev" type="date" value="${g.dataPrev || ""}"></div>
     <div class="row">${novo ? `<button class="btn ghost" data-close>Cancelar</button>` : `<button class="btn warn" id="gaDel">Apagar</button>`}<button class="btn primary" id="gaSalvar">${novo ? "Salvar ganho" : "Salvar"}</button></div>`, () => {
     $$("#gaPl button").forEach(b => b.addEventListener("click", () => { $$("#gaPl button").forEach(x => x.setAttribute("aria-pressed", x === b)); g.pl = b.dataset.pl; }));
+    let recebido = g.recebido !== false;
+    $$("#gaRec button").forEach(b => b.addEventListener("click", () => { $$("#gaRec button").forEach(x => x.setAttribute("aria-pressed", x === b)); recebido = b.dataset.rec === "1"; $("#gaPrevWrap").hidden = recebido; }));
     $("#gaSalvar").addEventListener("click", () => {
       const v = dinheiro(($("#gaVal").value || "").trim()) || parseFloat(($("#gaVal").value || "").replace(",", "."));
       if (!(v > 0)) { toast("Coloque o valor que a plataforma pagou"); $("#gaVal").focus(); return; }
       g.valor = Math.round(v * 100) / 100; g.iso = $("#gaDia").value || isoOf(new Date());
       g.pk = Math.max(0, +$("#gaPk").value || 0); g.km = Math.max(0, parseFloat($("#gaKm").value) || 0); g.desc = $("#gaDesc").value.trim(); g.pl = g.pl || "Outra";
+      g.recebido = recebido; g.dataPrev = recebido ? "" : ($("#gaPrev").value || "");
       st.ganhos = st.ganhos || []; const i = st.ganhos.findIndex(x => x.id === g.id); if (i >= 0) st.ganhos[i] = g; else st.ganhos.push(g);
       save(); closeSheet(); renderResumo(); toast(`Ganho salvo: R$ ${fmt(g.valor)}${g.pl ? " · " + g.pl : ""}`);
     });
@@ -2013,6 +2020,17 @@ function renderGanhos(p) {
   box.innerHTML = `<div class="gh-head"><h3 class="sub-h" style="margin:0">Ganhos por plataforma${gl.length ? " · R$ " + fmt(tot) : ""}</h3><button class="btn primary sm" data-act="ganho">+ Lançar ganho</button></div>
     ${gl.length ? `<div class="gper">${gl.map(g => `<button class="gasto-row" data-ganho="${g.id}"><span class="gico">💰</span><span class="gtx"><b>${esc(g.pl || "Sem plataforma")}${g.desc ? " · " + esc(g.desc) : ""}</b><em>${esc(brOf(g.iso))}${g.pk ? " · " + g.pk + " pac." : ""}${g.km ? " · " + km1(g.km) + " km" : ""}</em></span><b class="gval">R$ ${fmt(g.valor)}</b></button>`).join("")}</div>`
       : `<p class="sub">Lance quanto cada plataforma te pagou (Shopee, Mercado Livre…) com valor, km e pacotes. Aparece aqui e no dashboard “Qual plataforma paga melhor”.</p>`}`;
+}
+/* repasse a receber: o que as plataformas ainda vão pagar */
+function renderRepasse() {
+  const box = $("#repasseBox"); if (!box) return;
+  const pend = (st.ganhos || []).filter(g => g.recebido === false);
+  if (!pend.length) { box.innerHTML = ""; return; }
+  const tot = pend.reduce((a, g) => a + (+g.valor || 0), 0);
+  pend.sort((a, b) => (a.dataPrev || "9") < (b.dataPrev || "9") ? -1 : 1);
+  box.innerHTML = `<div class="gh-head"><h3 class="sub-h" style="margin:0">A receber das plataformas · R$ ${fmt(tot)}</h3></div>
+    <div class="gper">${pend.map(g => { const atras = g.dataPrev && g.dataPrev < isoOf(new Date()); return `<button class="gasto-row" data-ganho="${g.id}"><span class="gico">⏳</span><span class="gtx"><b>${esc(g.pl || "Outra")}${g.desc ? " · " + esc(g.desc) : ""}</b><em>${g.dataPrev ? (atras ? "⚠ previsto " : "previsto ") + esc(brOf(g.dataPrev)) : "sem data prevista"} · lançado ${esc(brOf(g.iso))}</em></span><b class="gval">R$ ${fmt(g.valor)}</b></button>`; }).join("")}</div>
+    <p class="hint">Quanto as plataformas ainda vão te pagar. Toque num item e marque “Já caiu na conta” quando o dinheiro entrar.</p>`;
 }
 /* ===================== metas do mês, projeção e ponto de equilíbrio ===================== */
 function metaMesSheet() {
@@ -2770,7 +2788,7 @@ function renderPeriod() {
     <div><b>${p.done}</b><span>entregas</span></div><div><b>${km1(p.km)}</b><span>km</span></div><div><b>R$ ${fmt(p.earn)}</b><span>ganho</span></div>
     <div class="fuel"><b>R$ ${fmt(p.fuel)}</b><span>gasolina</span></div><div class="fuel"><b>R$ ${fmt(p.wear + p.fixed)}</b><span>desgaste e fixos</span></div><div><b>R$ ${fmt(p.km ? p.cost / p.km : 0)}</b><span>custo por km</span></div>
     <div class="net"><b>R$ ${fmt(p.net)}</b><span>lucro real (ganho − todos os custos) · R$ ${fmt(p.days ? p.net / p.days : 0)} por dia${p.hours ? " · R$ " + fmt(p.net / p.hours) + " por hora" : ""}</span></div></div>`;
-  renderMetas(); renderReserva(); renderGanhos(p); renderPlatCompare(p); renderGastosPeriodo(p); renderVeiculo(); renderCharts(p);
+  renderMetas(); renderRepasse(); renderReserva(); renderGanhos(p); renderPlatCompare(p); renderGastosPeriodo(p); renderVeiculo(); renderCharts(p);
   return p;
 }
 /* lista dos gastos do período escolhido, agrupados por dia (a notinha de qualquer dia aparece aqui) */
